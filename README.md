@@ -13,8 +13,8 @@ pipeline is complete — not written from scratch at the end.
 
 ## Final Write-up (Synchronization, Tradeoffs, Improvements)
 
-*[To be written at checkpoint 11, distilled from the Technical Decision Log
-below. Placeholder — do not leave this section empty in the final commit.]*
+_[To be written at checkpoint 11, distilled from the Technical Decision Log
+below. Placeholder — do not leave this section empty in the final commit.]_
 
 ---
 
@@ -79,7 +79,7 @@ not reconstructed from memory afterward.
   is computed once, not per row.
 - **Tooling constraint found:** nitrogen 0.36.1 (vision-camera's Nitro spec
   codegen) cannot handle cross-module spec inheritance (`extends
-  CameraOutput` generates uncompilable Swift). Specs are standalone;
+CameraOutput` generates uncompilable Swift). Specs are standalone;
   `getCameraOutput()` returns the external `CameraOutput` HybridObject by
   value instead — the same pattern vision-camera's own nitro-image
   integration uses internally.
@@ -94,3 +94,54 @@ not reconstructed from memory afterward.
   raw counts instead. The back camera's default-negotiated 24fps is also
   below what GOAL.md's "highest available quality" calls for. The recording
   checkpoint must set an explicit FPS constraint, which fixes both issues.
+
+### Checkpoint 4 — GPS capture (Expo Module)
+
+- **Capture/classification split:** the Swift module emits raw CoreLocation
+  values only — `CLLocation.timestamp` as Unix ms, lat/long, and
+  speed/course/accuracy passed through with CoreLocation's own negative
+  "unavailable" encoding intact. The ≤20m threshold, `quality_flag`, `-1`
+  mapping, and ERROR sentinel rows are TS data-assembly work (checkpoints
+  6/7), so the classification logic stays unit-testable without a device.
+- **No clock anchor needed here** — unlike the frame path:
+  `CLLocation.timestamp` is already a wall-clock `Date` from the fix, so
+  `timeIntervalSince1970 × 1000` is the hardware timestamp. The two capture
+  paths converge on the same Unix-ms axis via different, documented routes.
+- **Hardware errors are stream entries, not exceptions:** `didFailWithError`
+  appends a distinct `errorCode` entry to the same chronological buffer.
+  Verified organically on the simulator — CoreLocation emitted a transient
+  error before its first fix and it appeared in the drain as an error entry
+  rather than vanishing.
+- **Continuous-capture knobs that matter:** `kCLLocationAccuracyBest` +
+  `distanceFilter = kCLDistanceFilterNone` (every update, per GOAL.md §3)
+  and `pausesLocationUpdatesAutomatically = false` — iOS silently pauses
+  updates otherwise, which would fake a GPS gap.
+- **API shape mirrors the frame module** (`drain()` / `count`, NSLock'd
+  buffer, main-thread CLLocationManager for its run-loop requirement) — one
+  pattern for both native capture modules.
+- **Verified (simulator):** 1 Hz sustained updates, monotonic timestamps
+  (span 20.9s over a 20s window), raw negatives on the first no-motion fix,
+  drain round-trip, permission flow. **Pending:** moving-fix speed/course
+  (dev-client reload channel broke; 3 attempts, stopped per AGENTS.md) and
+  the real-device walk — both queued as the first minutes of checkpoint 5's
+  session.
+- **Real-device finding (iPhone, indoor, stationary/light movement):**
+  first `drain()` at t=20s returned 8 fixes spanning **80.2s** — physically
+  impossible within a 20s-old session. Root cause: `CLLocationManager`'s
+  first delivery on a fresh authorization is commonly a **cached
+  last-known-location** from before the manager started (`buffered` jumped
+  straight to 5 at t=1s, confirming a startup burst rather than 5 fresh
+  reads in one second), not a live fix. Expected CoreLocation behavior, not
+  a bug in our capture code — but it's an **open design decision for
+  checkpoints 6/7**: `LocationData.csv` is named `{epochMs}_...`, implying
+  everything in it belongs to that session; a fix timestamped before the
+  session's `epochMs` should not silently land in the file. Needs an
+  explicit filter (drop or flag fixes with `timestamp < epochMs`) in the
+  CSV-assembly stage.
+- **Speed/course still unresolved on real hardware too:** 8/8 fixes had
+  `speed<0`/`course<0` (indoor walk within a small room, `hAcc` 12-24m —
+  the movement was inside the fix's own error margin, so CoreLocation had
+  no basis to report either). Not a new finding, but confirms the
+  simulator's gap wasn't a simulator-only artifact. Still deferred to
+  checkpoint 10's real outdoor recording, where actual walking speed will
+  exceed GPS noise.

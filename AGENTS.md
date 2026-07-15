@@ -112,25 +112,13 @@ These are the seeds of the "what I'd improve given more time" section of the REA
 
 ## Superpowers Integration
 
-**Before starting the native modules (Frame Processor Plugin, Expo GPS module):**
-Use `/brainstorming` to walk through the `AVCaptureMultiCamSession` config and `CLLocationManager` delegate setup _before_ writing Swift — these are the two places where a wrong assumption is expensive to unwind later in a 2-day window.
+**Before starting native module work** (custom camera output, GPS module): use `/brainstorming` first — these are the places where a wrong assumption is expensive to unwind in a 2-day window.
 
-**For implementation:**
-Use `/execute-plan` to batch work into checkpoints: (1) dual camera + preview working, (2) frame timestamp plugin wired and buffering, (3) GPS module + interpolation, (4) CSV/session assembly, (5) debug screen, (6) real recording validation. Do not start checkpoint N+1 until N produces verifiable output.
+**For implementation:** use `/execute-plan`, following the Build Order below as the single source of truth for checkpoints — don't maintain a second list here. Do not start checkpoint N+1 until N produces verifiable output.
 
 **TDD** for all pure TypeScript logic (interpolation, CSV formatting) — write the failing test first. Not required for the Swift native layer given scope, but see Validation Strategy in `CLAUDE.md` for the equivalent rigor.
 
 **Debugging:** 4-phase methodology (reproduce, root cause, hypothesis, fix). If a native/JS bridge issue survives three fix attempts, stop and flag it explicitly rather than papering over it with a workaround that reintroduces bridge-per-frame calls — that would silently violate the core architectural principle in `CLAUDE.md`.
-
----
-
-## Privacy and Data Handling
-
-This app records **video, GPS, and location history** — sensitive personal data by nature, and directly relevant to how Sapios will judge the submission (their product handles the same category of data for regulated driving tests).
-
-- **All session data stays on-device.** No network calls, no analytics SDK, no crash reporting service wired into this prototype. If asked to add any of these, flag it — it is out of scope and would change the privacy posture of the deliverable. This includes `react-native-maps` — verify it renders offline/cached tiles without phoning home telemetry, or accept the one exception explicitly and document it.
-- **The sample output folder for the deliverable must come from a real recording the candidate consents to sharing** (e.g., a walk near their own home) — never someone else's location data, and videos are omitted from the shared output per `GOAL.md`.
-- **No hardcoded API keys or secrets** — there should be none in this project; if a dependency wants one, that's a signal it doesn't belong here.
 
 ---
 
@@ -199,8 +187,8 @@ Each session targets a single checkpoint from the Superpowers `/execute-plan` br
 0. **Tooling setup** — tsconfig (extends `expo/tsconfig.base`, `strict: true`), Prettier (`semi: false`, `singleQuote: true`, rest defaults), ESLint (`eslint-config-expo` + `@typescript-eslint/no-explicit-any: error` + `import/no-default-export: error` scoped off for `app/**`), `lint`/`format`/`format:check` scripts — all verified green (`npx expo lint`, `npx tsc --noEmit`, `npm run format:check`) before any feature code. **Pin ESLint to the 9.x line, not 10** — `eslint-config-expo`'s current internal `eslint-plugin-react` depends on `context.getFilename`, removed in ESLint 10. Do not "helpfully" upgrade this without re-checking that constraint.
 1. Expo project scaffold (`expo prebuild`, bare-enough to support native modules and `AVCaptureMultiCamSession`). `npm install`, exact versions from the start.
 2. `react-native-vision-camera` installed and configured for dual-camera preview — no timestamp logic yet, just confirm both feeds render simultaneously.
-3. Frame Processor Plugin (Swift) — extract `presentationTimeStamp`, buffer in memory, expose to TS. Verify frame count against expected `fps × duration` before moving on.
-4. Expo GPS module (Swift) — `CLLocationManager`, hardware timestamp, all required fields including `-1` fallbacks and `ERROR` sentinel rows.
+3. Custom native camera output (Swift, `NativeCameraOutput`) — extract `presentationTimeStamp`, buffer in memory, expose to TS. Verify frame count against expected `fps × duration` before moving on.
+4. Expo GPS module (Swift) — `CLLocationManager`, hardware timestamp, all required fields including `-1` fallbacks. Native emits a hardware-error signal only; `quality_flag`/`ERROR` sentinel row formatting happens downstream in TS (checkpoint 6/7), not here.
 5. `sessionManager.ts` — generates `{epochMs}`, owns folder lifecycle.
 6. `gpsInterpolation.ts` — pure function, unit-tested, gap detection + fill.
 7. CSV writers + `metadata.json` assembly — buffered, periodic flush.
