@@ -1,0 +1,10 @@
+{
+  "name": "expo-gps",
+  "version": "1.0.0",
+  "description": "SapiAR native GPS capture — CLLocationManager with hardware timestamps (see CLAUDE.md)",
+  "main": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

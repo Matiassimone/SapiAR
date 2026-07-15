@@ -9,7 +9,7 @@ import type { CameraOutput } from 'react-native-vision-camera'
  * uncompilable Swift for cross-module spec inheritance (`override` of
  * non-`open` members), while external HybridObjects in method returns are the
  * same proven pattern vision-camera itself uses with nitro-image types.
- * See docs/superpowers/specs/2026-07-14-frame-timestamp-plugin-design.md.
+ * See docs/design/2026-07-14-frame-timestamp-plugin-design.md.
  */
 export interface FrameTimestampController extends HybridObject<{
   ios: 'swift'

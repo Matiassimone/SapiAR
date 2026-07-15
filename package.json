@@ -7,6 +7,7 @@
   "dependencies": {
     "expo": "57.0.4",
     "expo-dev-client": "57.0.5",
+    "expo-gps": "file:modules/expo-gps",
     "expo-status-bar": "57.0.0",
     "frame-timestamp-plugin": "file:modules/frame-timestamp-plugin",
     "react": "19.2.3",

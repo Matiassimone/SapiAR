@@ -1,3 +1,4 @@
+import { ExpoGps, type GpsSample } from 'expo-gps'
 import { StatusBar } from 'expo-status-bar'
 import {
   createFrameTimestampController,
@@ -25,16 +26,19 @@ interface CameraFrameStats {
 }
 
 /**
- * Checkpoint-3 verification readout (temporary — replaced by the record UI in
- * checkpoint 8): per-camera captured/dropped/expected frame counts, plus a
- * one-shot drain at 15 s proving the buffer is readable from TS and that the
- * timestamp span matches the elapsed window. See CLAUDE.md Validation Strategy.
+ * Checkpoint-3/4 verification readout (temporary — replaced by the record UI
+ * in checkpoint 8): per-camera captured/dropped/expected frame counts plus
+ * GPS buffer state, with one-shot drains proving the buffers are readable
+ * from TS and timestamp spans match the elapsed window. See CLAUDE.md
+ * Validation Strategy.
  */
 interface FrameVerification {
   elapsedS: number
   front: CameraFrameStats
   back: CameraFrameStats
   drainSummary: string | null
+  gpsCount: number
+  gpsDrainSummary: string | null
 }
 
 function expectedFrames(stats: CameraFrameStats, elapsedS: number): string {
@@ -49,11 +53,44 @@ export default function App() {
     null,
   )
   const drainSummaryRef = useRef<string | null>(null)
+  const gpsDrainSummaryRef = useRef<string | null>(null)
+  const [gpsStatus, setGpsStatus] = useState<string | null>(null)
 
   useEffect(() => {
     let session: CameraSession | undefined
     let interval: ReturnType<typeof setInterval> | undefined
+    let gpsInterval: ReturnType<typeof setInterval> | undefined
     let cancelled = false
+
+    // GPS capture is independent of the cameras — started first, and its
+    // verification ticks on its own interval, so it runs on devices (and the
+    // simulator, via simctl simulated location) where multi-cam is
+    // unavailable and the camera setup exits early.
+    const setupGps = async (): Promise<void> => {
+      const gpsGranted = await ExpoGps.requestPermission()
+      if (!gpsGranted) {
+        console.log('[gps-check] location permission denied — GPS capture off')
+        return
+      }
+      ExpoGps.start()
+      const gpsStartedAtMs = Date.now()
+      gpsInterval = setInterval(() => {
+        const elapsedS = (Date.now() - gpsStartedAtMs) / 1000
+        if (elapsedS >= 20 && gpsDrainSummaryRef.current == null) {
+          gpsDrainSummaryRef.current = summarizeGpsDrain(ExpoGps.drain())
+        }
+        const line =
+          `[gps-check] t=${elapsedS.toFixed(0)}s buffered=${ExpoGps.count}` +
+          (gpsDrainSummaryRef.current != null
+            ? ` | ${gpsDrainSummaryRef.current}`
+            : '')
+        // Both channels on purpose: Metro logs for remote reading, on-screen
+        // text so verification survives a broken dev-client log socket
+        // (observed during this checkpoint) and works via screenshot.
+        console.log(line)
+        setGpsStatus(line)
+      }, 1000)
+    }
 
     const setup = async (): Promise<void> => {
       const granted =
@@ -155,6 +192,8 @@ export default function App() {
             fps: backFps,
           },
           drainSummary: drainSummaryRef.current,
+          gpsCount: ExpoGps.count,
+          gpsDrainSummary: gpsDrainSummaryRef.current,
         }
         setVerification(snapshot)
         // Mirrored to Metro so the frame-count check can be read off-device
@@ -171,12 +210,19 @@ export default function App() {
       }, 1000)
     }
 
+    setupGps().catch((error: unknown) => {
+      console.log(
+        `[gps-check] setup failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    })
     setup().catch((error: unknown) => {
       setStatus(error instanceof Error ? error.message : String(error))
     })
     return () => {
       cancelled = true
       if (interval != null) clearInterval(interval)
+      if (gpsInterval != null) clearInterval(gpsInterval)
+      ExpoGps.stop()
       void session?.stop()
     }
   }, [])
@@ -195,22 +241,73 @@ export default function App() {
           />
         </>
       ) : (
-        <Text style={styles.status}>{status}</Text>
+        <Text style={styles.status}>
+          {status}
+          {gpsStatus != null ? `\n\n${gpsStatus}` : ''}
+        </Text>
       )}
       {verification != null && (
         <View style={styles.overlay}>
           <Text style={styles.overlayText}>
             {`t=${verification.elapsedS.toFixed(0)}s\n` +
               `Back:  ${verification.back.count} frames (exp ${expectedFrames(verification.back, verification.elapsedS)}, drop ${verification.back.dropped})\n` +
-              `Front: ${verification.front.count} frames (exp ${expectedFrames(verification.front, verification.elapsedS)}, drop ${verification.front.dropped})` +
+              `Front: ${verification.front.count} frames (exp ${expectedFrames(verification.front, verification.elapsedS)}, drop ${verification.front.dropped})\n` +
+              `GPS:   ${verification.gpsCount} buffered` +
               (verification.drainSummary != null
                 ? `\n${verification.drainSummary}`
+                : '') +
+              (verification.gpsDrainSummary != null
+                ? `\n${verification.gpsDrainSummary}`
                 : '')}
           </Text>
         </View>
       )}
       <StatusBar style="auto" />
     </View>
+  )
+}
+
+/**
+ * One-shot GPS drain summary for checkpoint-4 verification: fix/error split,
+ * timestamp monotonicity, span, and what CoreLocation's raw "unavailable"
+ * negatives look like when stationary.
+ */
+function summarizeGpsDrain(samples: GpsSample[]): string {
+  const fixes = samples.filter((sample) => sample.errorCode == null)
+  const errors = samples.length - fixes.length
+  const timestamps = fixes
+    .map((sample) => sample.timestampMs)
+    .filter((ms): ms is number => ms != null)
+  const monotonic = timestamps.every(
+    (ms, index) => index === 0 || ms >= (timestamps[index - 1] ?? 0),
+  )
+  const spanS =
+    timestamps.length > 1
+      ? ((timestamps[timestamps.length - 1] ?? 0) - (timestamps[0] ?? 0)) / 1000
+      : 0
+  const negativeSpeed = fixes.filter(
+    (sample) => (sample.speedMs ?? 0) < 0,
+  ).length
+  const negativeCourse = fixes.filter(
+    (sample) => (sample.courseDeg ?? 0) < 0,
+  ).length
+  const first = fixes[0]
+  const firstCoords =
+    first?.lat != null && first.long != null
+      ? `(${first.lat}, ${first.long})`
+      : 'n/a'
+  const accuracies = fixes
+    .map((sample) => sample.horizontalAccuracyM)
+    .filter((meters): meters is number => meters != null)
+  const accuracyRange =
+    accuracies.length > 0
+      ? `${Math.min(...accuracies).toFixed(0)}-${Math.max(...accuracies).toFixed(0)}m`
+      : 'n/a'
+  return (
+    `gps drained @20s — ${fixes.length} fixes, ${errors} errors, ` +
+    `monotonic=${monotonic}, span ${spanS.toFixed(1)}s, ` +
+    `speed<0: ${negativeSpeed}, course<0: ${negativeCourse}, ` +
+    `hAcc ${accuracyRange}, first ${firstCoords}`
   )
 }
 
