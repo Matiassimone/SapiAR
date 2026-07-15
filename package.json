@@ -8,6 +8,7 @@
     "expo": "57.0.4",
     "expo-dev-client": "57.0.5",
     "expo-status-bar": "57.0.0",
+    "frame-timestamp-plugin": "file:modules/frame-timestamp-plugin",
     "react": "19.2.3",
     "react-native": "0.86.0",
     "react-native-nitro-image": "0.15.1",
@@ -19,6 +20,7 @@
     "eslint": "9.39.5",
     "eslint-config-expo": "57.0.0",
     "eslint-config-prettier": "10.1.8",
+    "nitrogen": "0.36.1",
     "prettier": "3.9.5",
     "typescript": "6.0.3"
   },

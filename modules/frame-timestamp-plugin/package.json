@@ -1,0 +1,14 @@
+{
+  "name": "frame-timestamp-plugin",
+  "version": "1.0.0",
+  "description": "SapiAR native frame timestamp capture — vision-camera v5 custom output (see CLAUDE.md)",
+  "main": "src/index.ts",
+  "private": true,
+  "scripts": {
+    "codegen": "nitrogen"
+  },
+  "peerDependencies": {
+    "react-native-nitro-modules": "*",
+    "react-native-vision-camera": "*"
+  }
+}

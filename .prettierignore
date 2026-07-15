@@ -1,7 +1,7 @@
-# Dependencies and native prebuild output — not ours to reformat
+# Dependencies and native prebuild output
 node_modules/
-ios/
-android/
+/ios
+/android
 
 # Build output
 .expo/
@@ -10,4 +10,12 @@ dist/
 # npm-generated
 package-lock.json
 
+# Nitro
+nitrogen/generated/
+**/nitrogen/generated/
+
+# Goal task md file
 GOAL.md
+
+
+

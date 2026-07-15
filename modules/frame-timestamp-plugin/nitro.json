@@ -1,0 +1,20 @@
+{
+  "$schema": "https://nitro.margelo.com/nitro.schema.json",
+  "gitAttributesGeneratedFlag": true,
+  "cxxNamespace": ["frametimestamp"],
+  "ios": {
+    "iosModuleName": "FrameTimestampPlugin"
+  },
+  "android": {
+    "androidNamespace": ["frametimestamp"],
+    "androidCxxLibName": "FrameTimestampPlugin"
+  },
+  "autolinking": {
+    "FrameTimestampController": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "FrameTimestampController"
+      }
+    }
+  }
+}

@@ -7,7 +7,14 @@ module.exports = defineConfig([
   expoConfig,
   eslintConfigPrettier,
   {
-    ignores: ['dist/**', '.expo/**', 'ios/**', 'android/**'],
+    ignores: [
+      'dist/**',
+      '.expo/**',
+      'ios/**',
+      'android/**',
+      'nitrogen/generated/',
+      '**/nitrogen/generated/',
+    ],
   },
   {
     files: ['**/*.ts', '**/*.tsx'],
@@ -17,6 +24,8 @@ module.exports = defineConfig([
     },
   },
   {
+    // TEMPORARY: App.tsx uses registerRootComponent's default export in the
+    // pre-router scaffold. Remove this exception when app/ migrates to expo-router.
     // Expo Router requires default exports for screens under app/.
     files: ['app/**/*.{ts,tsx}', 'App.tsx'],
     rules: {
