@@ -177,3 +177,41 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
   throws — plausibly correct as an unrecoverable state, but undecided), and
   (2) whether a cancelled/failed session should delete its folder. Both need
   an owner decision before checkpoint 8 wires the record button.
+  _Resolved: Architecture Rule #8 now says let it throw, no special cases._
+
+### Checkpoint 6 — gpsInterpolation.ts
+
+- **TDD, red-first:** 12 tests written before the implementation, covering
+  every case the checkpoint mandated — pass-through, gap exactly at
+  threshold (not interpolated: strictly-above triggers), single/multiple
+  gaps, error-entry-inside-a-gap, leading/trailing errors, empty/single
+  inputs, input immutability, and the continuity property itself (no
+  consecutive positioned-point delta above threshold — the exact check
+  CLAUDE.md's Validation Strategy runs against real data in checkpoint 10).
+- **Threshold: 3000 ms, parameterized.** 3× the 1 Hz cadence verified
+  on-device in checkpoint 4: one missed update (~2 s silence) is normal
+  jitter, two or more is a real gap. Exported as a constant so checkpoint 7
+  passes it explicitly.
+- **Synthetic rows carry interpolated lat/long only; kinematics and
+  accuracies are `-1`.** GOAL.md §4's requirement is positional continuity
+  ("no large holes"); speed/course/accuracy on a synthetic row would be
+  fabricated sensor data. The bounding fixes frequently carry `-1`
+  themselves (the stationary case from checkpoint 4), so per-field
+  interpolate-or-not rules would add complexity to produce fake precision.
+  `INTERP` + `-1` keeps synthetic rows unmistakable downstream.
+- **Fill density:** `ceil(gap/threshold) − 1` evenly spaced points, so no
+  resulting delta exceeds the threshold — the output satisfies the
+  continuity property by construction.
+- **Hardware-error entries are not gap boundaries** — they carry no
+  timestamp/position, so nothing can be interpolated from them. They pass
+  through in arrival order; the gap is measured between real fixes. (Edge
+  case GOAL.md doesn't address; decided + tested explicitly.)
+- **No extrapolation at array edges:** a gap with only one bounding fix is
+  left alone — linear interpolation needs two bounds, and extrapolating
+  fabricates a trajectory. The function also can't see session start/stop
+  times by design; whether the session's first/last seconds need coverage
+  is a checkpoint 7/8 (assembly) question, flagged not guessed.
+- **Ownership boundary honored:** this module assigns only `INTERP` on
+  points it creates. Real and error entries pass through byte-identical
+  (same references) — `OK`/`LOW_ACCURACY`/`ERROR` classification is
+  csvWriter's (checkpoint 7).
