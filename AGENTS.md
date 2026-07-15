@@ -6,7 +6,21 @@ Always-on rules for Claude Code. Read `CLAUDE.md` for full architectural context
 
 ## Dependency Management
 
-**Package manager: npm** (see `CLAUDE.md` → Tooling for the reasoning — Metro's default resolver assumes hoisted `node_modules`; pnpm needs extra config that isn't worth the setup risk on a repo a reviewer will clone cold). Use `npm install`, commit `package-lock.json`.
+**Package manager: npm** Metro's default resolver assumes hoisted `node_modules`; pnpm needs extra config that isn't worth the setup risk on a repo a reviewer will clone cold). Use `npm install` for day-to-day work, commit `package-lock.json`, and use **`npm ci`** (not `npm install`) for any reproducible/CI build step — it fails hard if the lockfile doesn't match `package.json` exactly, which is npm's equivalent of a frozen-lockfile guarantee.
+
+**`.npmrc` deliberately does not set `ignore-scripts=true` project-wide**, unlike a typical pnpm security baseline. This project's native-module tooling (Expo autolinking, vision-camera, CocoaPods integration) can depend on install-time lifecycle scripts; blocking them globally risks silent, hard-to-diagnose build breakage. For new or unfamiliar dependencies, review scripts manually and install with `npm install <package> --ignore-scripts` instead.
+
+**`.npmrc` sets `min-release-age=1`** (24h cooldown, requires npm CLI >= 11.10.0) to filter out most short-lived supply-chain compromises before they can be installed. If a legitimate install is blocked by this — for example, an urgent security patch that was just published — use `npm install --min-release-age 0 <package>@<version>` rather than removing or lowering the config. This is a known source of confusing "package not found" style errors for anyone (including an agent) who hasn't seen this config before — check `.npmrc` first if an install fails for a package that clearly exists on npm.
+
+**npm v12 blocks dependency install scripts by default** (`preinstall`/`install`/`postinstall`, plus implicit `node-gyp` rebuilds for packages with `binding.gyp`) — this is now enforced, not advisory, as of the v12 release. An install that silently skips a script is not necessarily a bug: check for a "skipped scripts" warning first. Workflow:
+
+```bash
+npm install-scripts approve --allow-scripts-pending   # list what's pending, and why
+npm install-scripts approve <package>                 # approve after reviewing the script
+npm install-scripts deny <package>                    # explicitly block instead
+```
+
+Approvals are pinned to the reviewed version by default and written to `package.json` — commit them. This is a hard failure point for any native-module dependency (the debug screen's `react-native-maps`, or anything using `node-gyp`) if left unapproved: a skipped native build doesn't fail the install, it fails later at runtime when the module can't load. If a task's build fails mysteriously after adding a dependency, check for unapproved scripts before assuming the config or the code is wrong.
 
 **Exact versions in `package.json`** — no `^` or `~` on direct dependencies. This is a hiring artifact; the reviewer may `git clone` and build it on a different date than today, and a floating version that pulls a breaking vision-camera or Expo SDK update is an unforced error.
 
@@ -83,11 +97,12 @@ Ponytail rung 5 ("already-installed dependency") applies specifically to:
 These are the seeds of the "what I'd improve given more time" section of the README write-up — harvest them there directly.
 
 **Commands:**
-| Command | When |
-|---|---|
-| `/ponytail-review` | Before marking any task complete |
-| `/ponytail-debt` | End of each session — feeds the README "given more time" section |
-| `/ponytail lite\|full\|ultra\|off` | Adjust only with explicit reason |
+
+| Command                            | When                                                             |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| `/ponytail-review`                 | Before marking any task complete                                 |
+| `/ponytail-debt`                   | End of each session — feeds the README "given more time" section |
+| `/ponytail lite\|full\|ultra\|off` | Adjust only with explicit reason                                 |
 
 ---
 
@@ -167,6 +182,7 @@ Each session targets a single checkpoint from the Superpowers `/execute-plan` br
 
 ## Build Order (reference)
 
+0. **Tooling setup** — tsconfig (extends `expo/tsconfig.base`, `strict: true`), Prettier (`semi: false`, `singleQuote: true`, rest defaults), ESLint (`eslint-config-expo` + `@typescript-eslint/no-explicit-any: error` + `import/no-default-export: error` scoped off for `app/**`), `lint`/`format`/`format:check` scripts — all verified green (`npx expo lint`, `npx tsc --noEmit`, `npm run format:check`) before any feature code. **Pin ESLint to the 9.x line, not 10** — `eslint-config-expo`'s current internal `eslint-plugin-react` depends on `context.getFilename`, removed in ESLint 10. Do not "helpfully" upgrade this without re-checking that constraint.
 1. Expo project scaffold (`expo prebuild`, bare-enough to support native modules and `AVCaptureMultiCamSession`). `npm install`, exact versions from the start.
 2. `react-native-vision-camera` installed and configured for dual-camera preview — no timestamp logic yet, just confirm both feeds render simultaneously.
 3. Frame Processor Plugin (Swift) — extract `presentationTimeStamp`, buffer in memory, expose to TS. Verify frame count against expected `fps × duration` before moving on.
