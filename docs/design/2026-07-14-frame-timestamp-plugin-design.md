@@ -87,9 +87,17 @@ only positions the series on the epoch. This is not the forbidden per-frame
 ## Known risk
 
 Multi-cam hardware cost with 4 outputs (2 preview + 2 timestamp). `configure()`
-throws explicitly if exceeded — verify on device. Fallback if it throws:
-`deliversPreviewSizedOutputBuffers = true` on the timestamp outputs to cut
-bandwidth (timestamps don't care about buffer size).
+throws explicitly if exceeded — verify on device.
+
+**Fallback retracted (checkpoint 8):** the originally documented fallback —
+`deliversPreviewSizedOutputBuffers = true` on the timestamp outputs — is
+**unsafe as written**: on a real device it throws `NSInvalidArgumentException`
+at init (this output has no preview layer), which Swift cannot catch —
+a 100%-reproducible launch crash. It was never validated when planned here.
+The budget concern it targeted also never materialized: recording uses
+`AVCaptureMovieFileOutput`, which adds no frame-streaming consumer. If the
+budget ever does overflow, the remaining lever is lowering the recording
+resolution target — not this property.
 
 ## Verification (this checkpoint)
 

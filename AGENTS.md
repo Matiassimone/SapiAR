@@ -30,7 +30,9 @@ Approvals are pinned to the reviewed version by default and written to `package.
 
 **TypeScript 6 no longer auto-includes `@types/*` packages.** Add `"types": ["jest"]` explicitly to `tsconfig.json` (or whichever `@types` package a new dependency needs) — omitting it produces confusing "cannot find name" errors that look like a missing install, not a missing config line.
 
-**`expo-file-system` v57's `FileHandle` writes bytes, not strings** — `writeBytes(Uint8Array)`, no `write(string)` overload. Encode with `TextEncoder` before each flush. Found while implementing checkpoint 7's CSV buffers.
+**`expo-file-system` v57's `FileHandle` writes bytes, not strings** — `writeBytes(Uint8Array)`, no `write(string)` overload. Encode with `TextEncoder` before each flush. Found while implementing checkpoint 7's CSV buffers. Also: `Append` mode opens but never creates — the target file must exist before the first `open()`, or it throws (checkpoint 8's CSV pre-creation fix).
+
+**`react-native-vision-camera` v5's `setOutputSettings()` is broken under `AVCaptureMultiCamSession`** — confirmed via 5 distinct configurations, always an uncatchable NSException. Never call it in this project (see CLAUDE.md's Video capture row for the workaround). Worth filing upstream as a minimal reproducible bug report if time allows before Thursday — not required for the deliverable, but a clean writeup of "5 configs, same crash, here's the isolated repro" is a genuinely useful contribution and low-cost given the investigation already happened.
 
 **Exact versions in `package.json`** — no `^` or `~` on direct dependencies. This is a hiring artifact; the reviewer may `git clone` and build it on a different date than today, and a floating version that pulls a breaking vision-camera or Expo SDK update is an unforced error.
 

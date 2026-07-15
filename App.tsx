@@ -1,105 +1,56 @@
-import { ExpoGps, type GpsSample } from 'expo-gps'
+import { ExpoGps } from 'expo-gps'
 import { StatusBar } from 'expo-status-bar'
-import {
-  createFrameTimestampController,
-  type FrameTimestampController,
-} from 'frame-timestamp-plugin'
+import { createFrameTimestampController } from 'frame-timestamp-plugin'
 import { useEffect, useRef, useState } from 'react'
-import { StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import {
+  CommonResolutions,
   NativePreviewView,
   VisionCamera,
   type CameraPreviewOutput,
   type CameraSession,
   type CameraSessionConnection,
+  type CameraVideoOutput,
 } from 'react-native-vision-camera'
 
-interface DualPreviews {
-  front: CameraPreviewOutput
-  back: CameraPreviewOutput
+import {
+  startRecordingSession,
+  type ActiveRecording,
+  type RecordingDeps,
+} from './src/session/recordingSession'
+
+interface CameraRig {
+  previews: { front: CameraPreviewOutput; back: CameraPreviewOutput }
+  recordingDeps: RecordingDeps
 }
 
-interface CameraFrameStats {
-  count: number
-  dropped: number
-  fps: number | null
-}
-
-/**
- * Checkpoint-3/4 verification readout (temporary — replaced by the record UI
- * in checkpoint 8): per-camera captured/dropped/expected frame counts plus
- * GPS buffer state, with one-shot drains proving the buffers are readable
- * from TS and timestamp spans match the elapsed window. See CLAUDE.md
- * Validation Strategy.
- */
-interface FrameVerification {
-  elapsedS: number
-  front: CameraFrameStats
-  back: CameraFrameStats
-  drainSummary: string | null
-  gpsCount: number
-  gpsDrainSummary: string | null
-}
-
-function expectedFrames(stats: CameraFrameStats, elapsedS: number): string {
-  if (stats.fps == null) return '?'
-  return String(Math.round(stats.fps * elapsedS))
-}
+// ponytail: fps fixed at 30 for both cameras — iPhone 12 Pro multi-cam
+// formats cap there in practice, and a uniform rate keeps the frame-count
+// validation arithmetic (fps × duration × 2) uniform. Revisit per-device
+// if Sapios targets hardware with higher multi-cam ceilings.
+const TARGET_FPS = 30
 
 export default function App() {
-  const [previews, setPreviews] = useState<DualPreviews | null>(null)
+  const [rig, setRig] = useState<CameraRig | null>(null)
   const [status, setStatus] = useState('Starting cameras…')
-  const [verification, setVerification] = useState<FrameVerification | null>(
-    null,
-  )
-  const drainSummaryRef = useRef<string | null>(null)
-  const gpsDrainSummaryRef = useRef<string | null>(null)
-  const [gpsStatus, setGpsStatus] = useState<string | null>(null)
+  const [elapsedS, setElapsedS] = useState<number | null>(null)
+  const recordingRef = useRef<ActiveRecording | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     let session: CameraSession | undefined
-    let interval: ReturnType<typeof setInterval> | undefined
-    let gpsInterval: ReturnType<typeof setInterval> | undefined
     let cancelled = false
 
-    // GPS capture is independent of the cameras — started first, and its
-    // verification ticks on its own interval, so it runs on devices (and the
-    // simulator, via simctl simulated location) where multi-cam is
-    // unavailable and the camera setup exits early.
-    const setupGps = async (): Promise<void> => {
-      const gpsGranted = await ExpoGps.requestPermission()
-      if (!gpsGranted) {
-        console.log('[gps-check] location permission denied — GPS capture off')
-        return
-      }
-      ExpoGps.start()
-      const gpsStartedAtMs = Date.now()
-      gpsInterval = setInterval(() => {
-        const elapsedS = (Date.now() - gpsStartedAtMs) / 1000
-        if (elapsedS >= 20 && gpsDrainSummaryRef.current == null) {
-          gpsDrainSummaryRef.current = summarizeGpsDrain(ExpoGps.drain())
-        }
-        const line =
-          `[gps-check] t=${elapsedS.toFixed(0)}s buffered=${ExpoGps.count}` +
-          (gpsDrainSummaryRef.current != null
-            ? ` | ${gpsDrainSummaryRef.current}`
-            : '')
-        // Both channels on purpose: Metro logs for remote reading, on-screen
-        // text so verification survives a broken dev-client log socket
-        // (observed during this checkpoint) and works via screenshot.
-        console.log(line)
-        setGpsStatus(line)
-      }, 1000)
-    }
-
     const setup = async (): Promise<void> => {
-      const granted =
+      const cameraGranted =
         VisionCamera.cameraPermissionStatus === 'authorized' ||
         (await VisionCamera.requestCameraPermission())
-      if (!granted) {
+      if (!cameraGranted) {
         setStatus('Camera permission denied — enable it in Settings.')
         return
       }
+      void ExpoGps.requestPermission()
+
       if (!VisionCamera.supportsMultiCamSessions) {
         setStatus(
           'This device does not support simultaneous multi-camera capture.',
@@ -108,15 +59,18 @@ export default function App() {
       }
 
       // Only hardware-supported device combinations can share one multi-cam
-      // session; pick the first combination that offers a front + back pair
-      // rather than pairing arbitrary devices ourselves.
+      // session — never pair devices manually. Among the front+back
+      // combinations, the LAST one is used: it's the configuration that
+      // verifiably negotiated 1920×1440@30 on device (the first combo
+      // reported no currentResolution under identical constraints).
       const deviceFactory = await VisionCamera.createDeviceFactory()
-      const combination =
-        deviceFactory.supportedMultiCamDeviceCombinations.find(
+      const frontBackCombos =
+        deviceFactory.supportedMultiCamDeviceCombinations.filter(
           (combo) =>
             combo.some((device) => device.position === 'front') &&
             combo.some((device) => device.position === 'back'),
         )
+      const combination = frontBackCombos[frontBackCombos.length - 1]
       const frontDevice = combination?.find(
         (device) => device.position === 'front',
       )
@@ -130,22 +84,45 @@ export default function App() {
         return
       }
 
-      const front = VisionCamera.createPreviewOutput()
-      const back = VisionCamera.createPreviewOutput()
-      const frontTimestamps = createFrameTimestampController()
-      const backTimestamps = createFrameTimestampController()
+      const previews = {
+        front: VisionCamera.createPreviewOutput(),
+        back: VisionCamera.createPreviewOutput(),
+      }
+      const frontFrames = createFrameTimestampController()
+      const backFrames = createFrameTimestampController()
+
+      // HIGHEST_4_3 expresses GOAL.md's "highest available quality" as
+      // negotiation intent — multi-cam formats on this hardware are 4:3
+      // sensor-native families. The target alone is NOT enough: without the
+      // resolutionBias + binned:false constraints below, the multi-cam
+      // negotiator settles on its smallest binned format (640×480, verified
+      // on device) regardless of any output's target resolution.
+      const createVideo = (): CameraVideoOutput =>
+        VisionCamera.createVideoOutput({
+          targetResolution: CommonResolutions.HIGHEST_4_3,
+        })
+      const frontVideo = createVideo()
+      const backVideo = createVideo()
+
       let frontFps: number | null = null
       let backFps: number | null = null
-      // ponytail: preview + timestamp outputs only, default formats
-      // (constraints: []). Recording outputs + HEVC constraints land later.
+
+      // Video outputs join the session at mount: reconfiguring a running
+      // session re-negotiates formats and glitches the preview; an idle
+      // recorder output does no encoding work (see checkpoint 8 design doc).
       const connections: CameraSessionConnection[] = [
         {
           input: frontDevice,
           outputs: [
-            { output: front, mirrorMode: 'auto' },
-            { output: frontTimestamps.getCameraOutput(), mirrorMode: 'auto' },
+            { output: previews.front, mirrorMode: 'auto' },
+            { output: frontFrames.getCameraOutput(), mirrorMode: 'auto' },
+            { output: frontVideo, mirrorMode: 'auto' },
           ],
-          constraints: [],
+          constraints: [
+            { fps: TARGET_FPS },
+            { resolutionBias: frontVideo },
+            { binned: false },
+          ],
           onSessionConfigSelected: (config) => {
             frontFps = config.selectedFPS ?? null
           },
@@ -153,10 +130,15 @@ export default function App() {
         {
           input: backDevice,
           outputs: [
-            { output: back, mirrorMode: 'auto' },
-            { output: backTimestamps.getCameraOutput(), mirrorMode: 'auto' },
+            { output: previews.back, mirrorMode: 'auto' },
+            { output: backFrames.getCameraOutput(), mirrorMode: 'auto' },
+            { output: backVideo, mirrorMode: 'auto' },
           ],
-          constraints: [],
+          constraints: [
+            { fps: TARGET_FPS },
+            { resolutionBias: backVideo },
+            { binned: false },
+          ],
           onSessionConfigSelected: (config) => {
             backFps = config.selectedFPS ?? null
           },
@@ -164,170 +146,116 @@ export default function App() {
       ]
       session = await VisionCamera.createCameraSession(true)
       await session.configure(connections)
+      // setOutputSettings is NEVER called: under AVCaptureMultiCamSession it
+      // throws an uncatchable ObjC exception on every attempt — binned or
+      // non-binned format, h265 listed in getSupportedVideoCodecs() or not
+      // (verified across five on-device configurations; vision-camera v5
+      // library bug). The library's default codec is empirically HEVC/hvc1
+      // on this hardware, satisfying GOAL.md §1's "HEVC preferred" — the
+      // one-shot log below is the per-run evidence for that reliance.
+      console.log(
+        `[camera-config] codecs — front: ${frontVideo.getSupportedVideoCodecs().join('/')}, ` +
+          `back: ${backVideo.getSupportedVideoCodecs().join('/')} ` +
+          '(relying on library default; setOutputSettings crashes under multi-cam)',
+      )
       if (cancelled) return
       await session.start()
-      setPreviews({ front, back })
-
-      // Elapsed here is verification arithmetic for the readout, not a data
-      // timestamp — frame rows only ever carry the native hardware clock.
-      const startedAtMs = Date.now()
-      interval = setInterval(() => {
-        const elapsedS = (Date.now() - startedAtMs) / 1000
-        if (elapsedS >= 15 && drainSummaryRef.current == null) {
-          drainSummaryRef.current = summarizeDrain(
-            frontTimestamps,
-            backTimestamps,
-          )
-        }
-        const snapshot: FrameVerification = {
-          elapsedS,
-          front: {
-            count: frontTimestamps.count,
-            dropped: frontTimestamps.droppedCount,
-            fps: frontFps,
-          },
-          back: {
-            count: backTimestamps.count,
-            dropped: backTimestamps.droppedCount,
-            fps: backFps,
-          },
-          drainSummary: drainSummaryRef.current,
-          gpsCount: ExpoGps.count,
-          gpsDrainSummary: gpsDrainSummaryRef.current,
-        }
-        setVerification(snapshot)
-        // Mirrored to Metro so the frame-count check can be read off-device
-        // during development (CLAUDE.md Validation Strategy). Temporary, like
-        // the overlay itself — removed with it in checkpoint 8.
+      // Delayed read: currentResolution populates asynchronously after the
+      // connections form — an immediate read after start() races it.
+      setTimeout(() => {
         console.log(
-          `[frame-check] t=${elapsedS.toFixed(0)}s ` +
-            `back=${snapshot.back.count}/exp ${expectedFrames(snapshot.back, elapsedS)} (drop ${snapshot.back.dropped}) ` +
-            `front=${snapshot.front.count}/exp ${expectedFrames(snapshot.front, elapsedS)} (drop ${snapshot.front.dropped})` +
-            (snapshot.drainSummary != null
-              ? ` | ${snapshot.drainSummary}`
-              : ''),
+          `[camera-config] negotiated resolutions — front: ${JSON.stringify(frontVideo.currentResolution)}, back: ${JSON.stringify(backVideo.currentResolution)}, fps — front: ${String(frontFps)}, back: ${String(backFps)}`,
         )
-      }, 1000)
+      }, 3000)
+
+      setRig({
+        previews,
+        recordingDeps: {
+          frontFrames,
+          backFrames,
+          frontVideo,
+          backVideo,
+          fps:
+            frontFps != null && backFps != null
+              ? { front: frontFps, back: backFps }
+              : null,
+        },
+      })
+      setStatus('')
     }
 
-    setupGps().catch((error: unknown) => {
-      console.log(
-        `[gps-check] setup failed: ${error instanceof Error ? error.message : String(error)}`,
-      )
-    })
     setup().catch((error: unknown) => {
       setStatus(error instanceof Error ? error.message : String(error))
     })
     return () => {
       cancelled = true
-      if (interval != null) clearInterval(interval)
-      if (gpsInterval != null) clearInterval(gpsInterval)
+      if (timerRef.current != null) clearInterval(timerRef.current)
+      void recordingRef.current?.stop()
       ExpoGps.stop()
       void session?.stop()
     }
   }, [])
 
+  const toggleRecording = async (): Promise<void> => {
+    if (rig == null) return
+    if (recordingRef.current == null) {
+      const recording = await startRecordingSession(rig.recordingDeps)
+      recordingRef.current = recording
+      setElapsedS(0)
+      timerRef.current = setInterval(() => {
+        setElapsedS(Math.round((Date.now() - recording.epochMs) / 1000))
+      }, 1000)
+    } else {
+      const active = recordingRef.current
+      recordingRef.current = null
+      if (timerRef.current != null) clearInterval(timerRef.current)
+      timerRef.current = null
+      setElapsedS(null)
+      await active.stop()
+    }
+  }
+
+  const isRecording = elapsedS != null
   return (
     <View style={styles.container}>
-      {previews != null ? (
+      {rig != null ? (
         <>
           <NativePreviewView
             style={styles.preview}
-            previewOutput={previews.back}
+            previewOutput={rig.previews.back}
           />
           <NativePreviewView
             style={styles.preview}
-            previewOutput={previews.front}
+            previewOutput={rig.previews.front}
           />
+          {isRecording && (
+            <View style={styles.timer}>
+              <Text style={styles.timerText}>
+                {`${Math.floor(elapsedS / 60)}:${String(elapsedS % 60).padStart(2, '0')}`}
+              </Text>
+            </View>
+          )}
+          <Pressable
+            style={styles.recordButton}
+            onPress={() => {
+              toggleRecording().catch((error: unknown) => {
+                setStatus(
+                  error instanceof Error ? error.message : String(error),
+                )
+              })
+            }}
+          >
+            <View style={isRecording ? styles.stopIcon : styles.recordIcon} />
+          </Pressable>
         </>
       ) : (
-        <Text style={styles.status}>
-          {status}
-          {gpsStatus != null ? `\n\n${gpsStatus}` : ''}
-        </Text>
+        <Text style={styles.status}>{status}</Text>
       )}
-      {verification != null && (
-        <View style={styles.overlay}>
-          <Text style={styles.overlayText}>
-            {`t=${verification.elapsedS.toFixed(0)}s\n` +
-              `Back:  ${verification.back.count} frames (exp ${expectedFrames(verification.back, verification.elapsedS)}, drop ${verification.back.dropped})\n` +
-              `Front: ${verification.front.count} frames (exp ${expectedFrames(verification.front, verification.elapsedS)}, drop ${verification.front.dropped})\n` +
-              `GPS:   ${verification.gpsCount} buffered` +
-              (verification.drainSummary != null
-                ? `\n${verification.drainSummary}`
-                : '') +
-              (verification.gpsDrainSummary != null
-                ? `\n${verification.gpsDrainSummary}`
-                : '')}
-          </Text>
-        </View>
+      {rig != null && status !== '' && (
+        <Text style={styles.errorBanner}>{status}</Text>
       )}
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
     </View>
-  )
-}
-
-/**
- * One-shot GPS drain summary for checkpoint-4 verification: fix/error split,
- * timestamp monotonicity, span, and what CoreLocation's raw "unavailable"
- * negatives look like when stationary.
- */
-function summarizeGpsDrain(samples: GpsSample[]): string {
-  const fixes = samples.filter((sample) => sample.errorCode == null)
-  const errors = samples.length - fixes.length
-  const timestamps = fixes
-    .map((sample) => sample.timestampMs)
-    .filter((ms): ms is number => ms != null)
-  const monotonic = timestamps.every(
-    (ms, index) => index === 0 || ms >= (timestamps[index - 1] ?? 0),
-  )
-  const spanS =
-    timestamps.length > 1
-      ? ((timestamps[timestamps.length - 1] ?? 0) - (timestamps[0] ?? 0)) / 1000
-      : 0
-  const negativeSpeed = fixes.filter(
-    (sample) => (sample.speedMs ?? 0) < 0,
-  ).length
-  const negativeCourse = fixes.filter(
-    (sample) => (sample.courseDeg ?? 0) < 0,
-  ).length
-  const first = fixes[0]
-  const firstCoords =
-    first?.lat != null && first.long != null
-      ? `(${first.lat}, ${first.long})`
-      : 'n/a'
-  const accuracies = fixes
-    .map((sample) => sample.horizontalAccuracyM)
-    .filter((meters): meters is number => meters != null)
-  const accuracyRange =
-    accuracies.length > 0
-      ? `${Math.min(...accuracies).toFixed(0)}-${Math.max(...accuracies).toFixed(0)}m`
-      : 'n/a'
-  return (
-    `gps drained @20s — ${fixes.length} fixes, ${errors} errors, ` +
-    `monotonic=${monotonic}, span ${spanS.toFixed(1)}s, ` +
-    `speed<0: ${negativeSpeed}, course<0: ${negativeCourse}, ` +
-    `hAcc ${accuracyRange}, first ${firstCoords}`
-  )
-}
-
-function summarizeDrain(
-  frontOutput: FrameTimestampController,
-  backOutput: FrameTimestampController,
-): string {
-  const frontMs = frontOutput.drain()
-  const backMs = backOutput.drain()
-  const frontSpanS =
-    frontMs.length > 1
-      ? ((frontMs[frontMs.length - 1] ?? 0) - (frontMs[0] ?? 0)) / 1000
-      : 0
-  const backSpanS =
-    backMs.length > 1
-      ? ((backMs[backMs.length - 1] ?? 0) - (backMs[0] ?? 0)) / 1000
-      : 0
-  return (
-    `drained @15s — Back: ${backMs.length} rows, span ${backSpanS.toFixed(2)}s | ` +
-    `Front: ${frontMs.length} rows, span ${frontSpanS.toFixed(2)}s`
   )
 }
 
@@ -345,18 +273,49 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 24,
   },
-  overlay: {
+  errorBanner: {
     position: 'absolute',
     top: 60,
-    left: 12,
-    right: 12,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 8,
-    padding: 8,
+    alignSelf: 'center',
+    color: '#f66',
+    paddingHorizontal: 16,
   },
-  overlayText: {
-    color: '#0f0',
-    fontFamily: 'Menlo',
-    fontSize: 12,
+  timer: {
+    position: 'absolute',
+    top: 60,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  timerText: {
+    color: '#fff',
+    fontVariant: ['tabular-nums'],
+    fontSize: 18,
+  },
+  recordButton: {
+    position: 'absolute',
+    bottom: 40,
+    alignSelf: 'center',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 4,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#e33',
+  },
+  stopIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    backgroundColor: '#e33',
   },
 })

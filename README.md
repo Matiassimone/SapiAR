@@ -256,3 +256,135 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
   design — interpolation needs two bounds and the pipeline never sees
   session stop time. Whether that leading/trailing window needs rows is an
   assembly/product question, flagged not guessed.
+  _Resolved: Architecture Rule #9 — no extrapolation at session edges._
+
+### Checkpoint 8 — Recording pipeline wired end-to-end
+
+- **The hardware-budget question resolved by reading the source:** v5's
+  default recording path is `AVCaptureMovieFileOutput` (internal encode of
+  the already-negotiated stream — `enablePersistentRecorder` stays off), so
+  recording adds no new frame-streaming consumer. Multi-cam cost is
+  dominated by sensor-format bandwidth, which this checkpoint _reduces_:
+  explicit `{ fps: 30 }` at a 1080p target versus checkpoint 3's
+  unconstrained formats (front had negotiated 60 fps). The `configure()`
+  throw remains the explicit arbiter and now surfaces in the UI error state.
+- **Crash found on device, root-caused, fixed by removal:** the
+  "belt-and-suspenders" bandwidth mitigation this checkpoint initially
+  shipped — `deliversPreviewSizedOutputBuffers = true` on the timestamp
+  outputs (checkpoint 3's documented-but-never-validated fallback) —
+  **crashes 100% reproducibly at launch on real hardware**:
+  `NSInvalidArgumentException` from `FrameTimestampCameraOutput.init()`,
+  because the property rejects data-only outputs with no preview layer, and
+  Swift cannot catch Objective-C exceptions (EXC_BREAKPOINT trap). Fix:
+  removed outright — not wrapped — since an ObjC++ exception bridge isn't
+  worth building for an optimization the budget analysis shows unnecessary.
+  Write-up material: a documented mitigation that was wrong the first time
+  it met hardware; the lesson is that fallbacks belong behind the same
+  validation bar as primary paths.
+- **Second device-found bug, same session: the CSV files were never
+  created.** expo-file-system's `FileHandle` in Append mode
+  opens-but-never-creates; checkpoint 5's sessionManager deliberately
+  creates only the folder ("paths and lifecycle", no content), and
+  checkpoint 7's buffers assumed the file existed at first append — the
+  responsibility fell in the gap _between_ two correctly-tested modules.
+  Fix: `recordingSession` creates both empty CSVs at session start
+  (orchestration owns "getting the pipeline ready"; sessionManager's
+  checkpoint-5 boundary stays untouched). Files are created truly empty —
+  headers remain buffer-owned, written on first flush (checkpoint 7's
+  existing decision). The `.mov` side has no such gap, confirmed with
+  hardware evidence: the failed session's folder contains both video files
+  and no CSVs — the Recorder creates its own output. Write-up material for
+  "what I'd improve": each checkpoint's unit tests correctly assumed the
+  other's preconditions, so only an integration test of
+  session-start-to-first-flush (or a real device run) could catch this —
+  that test is the first thing to add given more time.
+- **Fix verification status:** crash fix confirmed on hardware (app
+  launched and stayed alive well past the camera mount that previously
+  trapped 100% of launches). CSV-creation fix is pinned by a failing-first
+  unit test (48 total) and awaits the first successful device recording
+  for end-to-end confirmation.
+- **Third device-found bug: `setOutputSettings` called before
+  `configure()`.** Two unhandled promise rejections per launch ("Cannot set
+  output settings when VideoOutput is not yet connected") — the HEVC codec
+  setter ran at output creation, but the v5 contract (in the source, not
+  the error message alone) requires it _after_ `configure()` attaches the
+  output and _before_ `createRecorder()`. Root-caused with evidence from
+  the failed session's videos: **codec-only** — the FPS constraint is
+  declarative in the connections and did apply (`fps=30.003` back /
+  `29.997` front read straight from the `.mov` tracks — checkpoint 8's
+  24→30 objective landed), and the rejected codec setter was masked by the
+  library default already choosing `hvc1`/HEVC. Fix: setter moved after
+  `configure()`, properly awaited, errors surfacing in the UI. Verified
+  zero rejections on a fresh Metro-connected launch.
+- **New finding flagged (not chased in the bugfix session): negotiated
+  recording resolution is 640×480**, far below the 1080p target — read
+  from the same `.mov` tracks. Independent of the codec bug (that setter
+  doesn't touch resolution); the format negotiation across 6 outputs is
+  settling on the smallest multi-cam format. Needs its own investigation —
+  candidate causes: aspect-ratio weighting of the FHD 16:9 target against
+  4:3 multi-cam formats, or the `.any`-resolution timestamp outputs
+  dragging negotiation down.
+- **Resolution root cause found (fourth device session): missing
+  negotiation _intent_, not topology.** Five on-device experiments —
+  HIGHEST_4_3 target alone, no timestamp outputs, video-only connections,
+  alternate device combination, no FPS constraint — all still negotiated
+  640×480. The fix: vision-camera's constraints "describe intent", and no
+  resolution intent was ever expressed. Adding
+  `{ resolutionBias: videoOutput }` + `{ binned: false }` to each
+  connection's constraints moved negotiation to **1920×1440 @ 30 fps on
+  both cameras** (9× the pixels) with the full 6-output topology intact —
+  target resolution on the output alone is provably insufficient under
+  multi-cam.
+- **`setOutputSettings` is unusable under multi-cam — a vision-camera v5
+  bug, not a format issue.** The codec-crash hypothesis (HEVC missing at
+  the binned format) was disproven on device: `getSupportedVideoCodecs()`
+  lists `h265` at every tested format, yet `setOutputSettings` throws the
+  same uncatchable ObjC exception at 640×480-binned **and** at
+  1920×1440 non-binned. It has never once succeeded in a multi-cam
+  session. Resolution: never call it; rely on the library's default codec,
+  which is empirically HEVC/`hvc1` on this hardware (verified from
+  recorded files) — with a one-shot log of supported codecs per run as
+  standing evidence. Write-up material: two library behaviors (negotiation
+  needing explicit intent; a setter broken under multi-cam) that only real
+  hardware could reveal.
+- **End-to-end verification (real 64 s device recording, final config) —
+  every bar cleared:** both `.mov`s HEVC/`hvc1` at **1920×1440, 30.00 fps**
+  (probed from the files, not assumed); frame capture 1928 front / 1929
+  back vs ~1932 expected (99.8%, ±4-frame boundary slop, effectively zero
+  drops); FrameData row count cross-checks metadata exactly; GPS 64 real
+  fixes at 1 Hz + **3 INTERP rows filling a real gap** with max
+  consecutive delta 2543 ms ≤ the 3000 ms threshold (the Validation
+  Strategy continuity check, passing on real data); zero pre-session
+  timestamps in the CSV (cached-fix filter verified end-to-end);
+  `metadata.json` valid and consistent (fps 30/30 — checkpoint 3's
+  24 fps open item closed with negotiated, recorded proof).
+- **FPS constraint (checkpoint 3's carried item):** `{ fps: 30 }` on both
+  connections — uniform rate on hardware whose multi-cam formats cap at 30,
+  and uniform frame-count arithmetic (30 × duration × 2). On-device
+  before/after numbers pending the first real recording (metadata.json
+  carries the negotiated values).
+- **HEVC explicit** (`setOutputSettings({ codec: 'h265' })`), audio off (not
+  in GOAL.md; avoids the mic permission). Recorders write **directly into
+  the session folder** — `RecorderSettings.filePath` takes an absolute
+  filesystem path with parents auto-created, so GOAL §1 naming comes
+  straight from sessionManager with no temp-file move.
+- **Video outputs join the session at mount, recorders per session:**
+  reconfiguring a live session re-negotiates formats and glitches the
+  preview; an idle `MovieFileOutput` does no encode work. A `Recorder`
+  records once — each record-start creates fresh ones.
+- **Session-boundary hygiene:** record-start drains-and-discards everything
+  the timestamp controllers buffered since preview mount, plus a
+  `timestamp >= epochMs` frame filter for the one-tick boundary slop —
+  FrameData.csv only ever contains this session's frames.
+- **One 1 s cadence** drains all three native modules → appends → flushes:
+  ~60 frame rows per write is already "periodic, not per-row" without a
+  second timer.
+- **TDD:** 5 orchestrator tests (fakes for controllers/recorders, fake
+  timers, mocked FS) — pre-record discard, epoch filter, session-path
+  recording + stop finalization, GPS lifecycle, metadata correctness.
+  47 tests total.
+- **Verified:** simulator boot smoke (clean minimal UI, correct no-multi-cam
+  degradation, scaffolding gone). **Pending — the device e2e:** the app is
+  installed on the iPhone (build succeeded; auto-launch blocked by device
+  lock). First real record/stop run confirms playable HEVC `.mov`s, CSV
+  spot-checks, metadata, and the negotiated-FPS numbers.
