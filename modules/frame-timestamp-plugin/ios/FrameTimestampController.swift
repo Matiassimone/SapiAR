@@ -69,6 +69,11 @@ private final class FrameTimestampCameraOutput: HybridCameraOutputSpec, NativeCa
     // completeness). Our delegate work is ~ns, so late-frame pressure from
     // this output is not a realistic risk.
     output.alwaysDiscardsLateVideoFrames = false
+    // Note: `deliversPreviewSizedOutputBuffers` must never be set here — it
+    // throws NSInvalidArgumentException on data-only outputs with no preview
+    // layer (uncatchable from Swift; crashed on device, checkpoint 8), and
+    // the bandwidth concern it targeted doesn't apply: recording uses
+    // AVCaptureMovieFileOutput, which adds no frame-streaming consumer.
     output.setSampleBufferDelegate(delegate, queue: queue)
   }
 
