@@ -145,3 +145,35 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
   simulator's gap wasn't a simulator-only artifact. Still deferred to
   checkpoint 10's real outdoor recording, where actual walking speed will
   exceed GPS noise.
+
+### Checkpoint 5 — sessionManager.ts
+
+- **First TDD checkpoint** (per AGENTS.md): 8 failing-first Jest tests cover
+  GOAL.md §6 naming exactly (including `metadata.json` carrying no epoch
+  prefix), single-epochMs threading, purity/trailing-slash normalization,
+  and once-only epoch generation with folder creation (mocked FS).
+- **`Date.now()` is legal here, and only here:** `epochMs` is the session's
+  _identity_ — the folder-naming timestamp GOAL.md §6 defines as "the moment
+  recording started" — not a data timestamp. Architecture Rule #4 assigns
+  its generation to sessionManager.ts in TS; every CSV row still carries
+  only native hardware clocks. The distinction is documented at the call
+  site because it looks like a violation of the no-`Date()` rule without
+  that context.
+- **Pure/FS split:** `buildSessionPaths(epochMs, containerUri)` is a pure
+  function (fully unit-tested); `startSession()` is the thin orchestration
+  that reads the clock once, builds paths, and creates the folder via
+  expo-file-system v57's `Directory` API.
+- **Toolchain friction, same shape as ESLint 9/10:** jest must stay on the
+  **29.x line** — jest-expo@57 bundles jest-29 internals (`jest-mock@29`),
+  and jest 30's runtime calls APIs they lack
+  (`clearMocksOnScope`). Also, `min-release-age` blocked both
+  `jest-expo@57.0.2` and `expo-file-system@57.0.1` (published hours before
+  this session) — pinned the prior releases instead of lowering the
+  cooldown, per AGENTS.md. TypeScript 6 no longer auto-includes `@types/*`;
+  `"types": ["jest"]` added to tsconfig.
+- **Flagged, not guessed (per Session Discipline):** folder-lifecycle edge
+  cases are unspecified in CLAUDE.md/GOAL.md — (1) what to do if
+  `{epochMs}_Session/` already exists (current behavior: `Directory.create()`
+  throws — plausibly correct as an unrecoverable state, but undecided), and
+  (2) whether a cancelled/failed session should delete its folder. Both need
+  an owner decision before checkpoint 8 wires the record button.
