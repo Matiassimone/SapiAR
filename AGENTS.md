@@ -26,6 +26,10 @@ Approvals are pinned to the reviewed version by default and written to `package.
 
 **Never run `expo`/`npm` commands from inside a `modules/` subdirectory**, including in the background. If Expo's CLI picks up a module's folder as its working directory, it can treat that module as the app itself and overwrite/delete files in it (this happened once during checkpoint 3 — a background `expo run:ios` inherited a module's `cwd` and deleted a native source file; recovered from context, but avoidable). Always invoke these commands from the project root with an explicit path if running anything non-interactively or in the background.
 
+**Jest must stay on the 29.x line, not 30** — `jest-expo@57` packages Jest 29 internals, and Jest 30 calls APIs that don't exist on that internal version (e.g. `clearMocksOnScope`). Same shape as the ESLint 9/10 constraint: don't "helpfully" upgrade without re-checking this.
+
+**TypeScript 6 no longer auto-includes `@types/*` packages.** Add `"types": ["jest"]` explicitly to `tsconfig.json` (or whichever `@types` package a new dependency needs) — omitting it produces confusing "cannot find name" errors that look like a missing install, not a missing config line.
+
 **Exact versions in `package.json`** — no `^` or `~` on direct dependencies. This is a hiring artifact; the reviewer may `git clone` and build it on a different date than today, and a floating version that pulls a breaking vision-camera or Expo SDK update is an unforced error.
 
 ```json
