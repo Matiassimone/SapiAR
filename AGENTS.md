@@ -15,12 +15,16 @@ Always-on rules for Claude Code. Read `CLAUDE.md` for full architectural context
 **npm v12 blocks dependency install scripts by default** (`preinstall`/`install`/`postinstall`, plus implicit `node-gyp` rebuilds for packages with `binding.gyp`) — this is now enforced, not advisory, as of the v12 release. An install that silently skips a script is not necessarily a bug: check for a "skipped scripts" warning first. Workflow:
 
 ```bash
-npm install-scripts approve --allow-scripts-pending   # list what's pending, and why
+npm install-scripts ls                                # list what's pending, and why
 npm install-scripts approve <package>                 # approve after reviewing the script
 npm install-scripts deny <package>                    # explicitly block instead
 ```
 
 Approvals are pinned to the reviewed version by default and written to `package.json` — commit them. This is a hard failure point for any native-module dependency (the debug screen's `react-native-maps`, or anything using `node-gyp`) if left unapproved: a skipped native build doesn't fail the install, it fails later at runtime when the module can't load. If a task's build fails mysteriously after adding a dependency, check for unapproved scripts before assuming the config or the code is wrong.
+
+**nitrogen (v0.36.1, vision-camera's Nitro spec codegen) cannot handle cross-module spec inheritance.** A TS spec using `extends` on a type from another module (e.g. `extends CameraOutput`) generates Swift that doesn't compile — wrong namespace for inherited struct types, and `override` on members vision-camera emits as `public` (not `open`), which Swift forbids across module boundaries. Write standalone specs only; if a native class needs to hand back an external HybridObject, return it from a method (`getX(): ExternalType`) instead of inheriting its spec. This is the same pattern vision-camera's own nitro-image integration uses — not a workaround, the intended approach for cross-module composition.
+
+**Never run `expo`/`npm` commands from inside a `modules/` subdirectory**, including in the background. If Expo's CLI picks up a module's folder as its working directory, it can treat that module as the app itself and overwrite/delete files in it (this happened once during checkpoint 3 — a background `expo run:ios` inherited a module's `cwd` and deleted a native source file; recovered from context, but avoidable). Always invoke these commands from the project root with an explicit path if running anything non-interactively or in the background.
 
 **Exact versions in `package.json`** — no `^` or `~` on direct dependencies. This is a hiring artifact; the reviewer may `git clone` and build it on a different date than today, and a floating version that pulls a breaking vision-camera or Expo SDK update is an unforced error.
 
@@ -200,7 +204,7 @@ Each session targets a single checkpoint from the Superpowers `/execute-plan` br
 5. `sessionManager.ts` — generates `{epochMs}`, owns folder lifecycle.
 6. `gpsInterpolation.ts` — pure function, unit-tested, gap detection + fill.
 7. CSV writers + `metadata.json` assembly — buffered, periodic flush.
-8. Minimal record UI — preview, record/stop button, timer. Deliberately kept late — it's explicitly not what's being evaluated.
+8. Minimal record UI — preview, record/stop button, timer. Deliberately kept late — it's explicitly not what's being evaluated. **Must set an explicit FPS constraint on both camera outputs** (checkpoint 3 found the back camera negotiates a default 24fps with no constraint set, vs. front's 60fps — GOAL.md calls for highest available quality, and an explicit constraint also restores a real expected-frame-count baseline instead of measuring fps empirically after the fact).
 9. `session-debug.tsx` — map with real/interpolated points, counts, gap list. Built once real data exists to visualize; doubles as ongoing dev tool from this point forward.
 10. Real recording (30s+ outdoor walk) → validate frame count, GPS continuity, sentinel rows, eyeball via debug screen → produce sample output folder.
 11. README write-up (200-400 words) — pull directly from `ponytail:` shortcut comments and Session Report "Decisions made" entries accumulated across sessions, don't write it from scratch at the end.
