@@ -120,6 +120,16 @@ Use `/execute-plan` to batch work into checkpoints: (1) dual camera + preview wo
 
 ---
 
+## Privacy and Data Handling
+
+This app records **video, GPS, and location history** — sensitive personal data by nature, and directly relevant to how Sapios will judge the submission (their product handles the same category of data for regulated driving tests).
+
+- **All session data stays on-device.** No network calls, no analytics SDK, no crash reporting service wired into this prototype. If asked to add any of these, flag it — it is out of scope and would change the privacy posture of the deliverable. This includes `react-native-maps` — verify it renders offline/cached tiles without phoning home telemetry, or accept the one exception explicitly and document it.
+- **The sample output folder for the deliverable must come from a real recording the candidate consents to sharing** (e.g., a walk near their own home) — never someone else's location data, and videos are omitted from the shared output per `GOAL.md`.
+- **No hardcoded API keys or secrets** — there should be none in this project; if a dependency wants one, that's a signal it doesn't belong here.
+
+---
+
 ## Session Discipline
 
 Each session targets a single checkpoint from the Superpowers `/execute-plan` breakdown above — not the whole app.
