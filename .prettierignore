@@ -1,0 +1,13 @@
+# Dependencies and native prebuild output — not ours to reformat
+node_modules/
+ios/
+android/
+
+# Build output
+.expo/
+dist/
+
+# npm-generated
+package-lock.json
+
+GOAL.md
