@@ -215,3 +215,44 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
   points it creates. Real and error entries pass through byte-identical
   (same references) — `OK`/`LOW_ACCURACY`/`ERROR` classification is
   csvWriter's (checkpoint 7).
+
+### Checkpoint 7 — csvWriter, buffers, metadata
+
+- **TDD, red-first:** 21 new tests (41 total across the TS pipeline) —
+  headers pinned character-exact to GOAL.md, the 20 m boundary (exactly 20 m
+  is `OK`; strictly above is `LOW_ACCURACY`), ERROR sentinel with every
+  numeric field `-1` **including `Timestamp_unix_ms`** (per the Data Spec
+  clarification — the internally-known error arrival time is deliberately
+  not preserved), INTERP rows passing through unmodified, frame rows for
+  both cameras, and the pre-session filter's ordering guarantee.
+- **Pre-session cached fixes are dropped, and the filter runs BEFORE
+  interpolation.** A cached fix (checkpoint 4's 80.2 s-span finding) isn't
+  this session's data — but the sequencing is the real safety property: had
+  interpolation run first, the cached fix would anchor synthetic points
+  that never happened. The ordering test constructs exactly that scenario
+  (cached fix 40 s pre-epoch + two session fixes 2 s apart) and asserts
+  zero INTERP rows reach the file. Error entries carry no timestamp and are
+  kept — they occurred during the session and owe the file a sentinel row.
+- **Flush windows are append-only via a carried-over last fix.** The
+  location pipeline (filter → interpolate → format) runs per flush; the
+  previous window's last real fix is prepended as interpolation context so
+  a gap spanning two flushes is still detected — no whole-file rewrites,
+  no missed cross-window gaps. Tested with a 10 s gap split across two
+  flushes (3 INTERP rows appear, correctly ordered).
+- **Edge cases decided (GOAL.md silent), flagged in code:** negative
+  horizontal accuracy (CoreLocation invalid-fix marker) writes `-1` and can
+  never be `OK` — an invalid fix can't claim ≤20 m confidence; timestamps
+  are written as integer ms (sub-ms is below both sensors' meaningful
+  resolution).
+- **metadata.json schema** (unspecified in GOAL.md): minimal — epochMs,
+  durationMs, per-camera frame counts, GPS row counts by type
+  (real/interpolated/error), negotiated fps when known. The counts exist to
+  cross-check the CSVs; nothing speculative added.
+- **expo-file-system v57 append API:** `FileHandle` exposes `writeBytes`
+  (no string `write`) — rows are `TextEncoder`-encoded per flush,
+  `FileMode.Append` keeps files append-only.
+- **Still open for checkpoint 8:** the seconds between `epochMs` and the
+  first GPS fix (and between the last fix and stop) are uncovered by
+  design — interpolation needs two bounds and the pipeline never sees
+  session stop time. Whether that leading/trailing window needs rows is an
+  assembly/product question, flagged not guessed.

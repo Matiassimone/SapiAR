@@ -30,6 +30,8 @@ Approvals are pinned to the reviewed version by default and written to `package.
 
 **TypeScript 6 no longer auto-includes `@types/*` packages.** Add `"types": ["jest"]` explicitly to `tsconfig.json` (or whichever `@types` package a new dependency needs) — omitting it produces confusing "cannot find name" errors that look like a missing install, not a missing config line.
 
+**`expo-file-system` v57's `FileHandle` writes bytes, not strings** — `writeBytes(Uint8Array)`, no `write(string)` overload. Encode with `TextEncoder` before each flush. Found while implementing checkpoint 7's CSV buffers.
+
 **Exact versions in `package.json`** — no `^` or `~` on direct dependencies. This is a hiring artifact; the reviewer may `git clone` and build it on a different date than today, and a floating version that pulls a breaking vision-camera or Expo SDK update is an unforced error.
 
 ```json
