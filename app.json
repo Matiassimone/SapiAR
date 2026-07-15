@@ -8,7 +8,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.simdevelop.SapiAR"
+      "bundleIdentifier": "com.simdevelop.SapiAR",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SapiAR records the front and back cameras simultaneously during data collection sessions."
+      }
     },
     "android": {
       "adaptiveIcon": {
