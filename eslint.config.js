@@ -24,9 +24,6 @@ module.exports = defineConfig([
     },
   },
   {
-    // TEMPORARY: App.tsx uses registerRootComponent's default export in the
-    // pre-router scaffold. Remove this exception when app/ migrates to expo-router.
-    // Expo Router requires default exports for screens under app/.
     files: ['app/**/*.{ts,tsx}', 'App.tsx'],
     rules: {
       'import/no-default-export': 'off',

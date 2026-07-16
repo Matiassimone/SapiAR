@@ -1,7 +1,7 @@
 # Recording Pipeline — Design (Checkpoint 8, Part A)
 
 Date: 2026-07-15
-Status: approved for implementation (autonomous session — mandated by AGENTS.md Superpowers Integration)
+Status: implemented (checkpoint 8)
 
 ## The hardware-budget question
 

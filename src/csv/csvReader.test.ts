@@ -150,8 +150,8 @@ describe('parseRawRows', () => {
 })
 
 describe('timestamp uniqueness contract', () => {
-  it('preserves duplicate-timestamp rows — timestamps are NOT unique row ids', () => {
-    // GOAL.md wants every available update: a redelivered fix or two fixes
+  it('preserves duplicate-timestamp rows, timestamps are NOT unique row ids', () => {
+    // GOAL.md wants every available update. A redelivered fix or two fixes
     // rounding to the same integer ms are legitimate distinct rows. Viewers
     // must key rows by position, never by timestamp.
     const content =

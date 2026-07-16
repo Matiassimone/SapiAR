@@ -67,7 +67,7 @@ describe('formatFrameRow', () => {
   })
 })
 
-describe('formatLocationRow — real entries', () => {
+describe('formatLocationRow real entries', () => {
   it('classifies OK at exactly 20m (boundary is ≤)', () => {
     const row = formatLocationRow(fix({ horizontalAccuracyM: 20 }))
     expect(row.endsWith(',0,OK')).toBe(true)
@@ -103,7 +103,7 @@ describe('formatLocationRow — real entries', () => {
   })
 })
 
-describe('formatLocationRow — ERROR sentinel', () => {
+describe('formatLocationRow ERROR sentinel', () => {
   it('sets every numeric field to -1, including the timestamp', () => {
     expect(formatLocationRow(errorEntry)).toBe(
       '-1,-1,-1,-1,-1,-1,-1,-1,0,ERROR',
@@ -111,7 +111,7 @@ describe('formatLocationRow — ERROR sentinel', () => {
   })
 })
 
-describe('formatLocationRow — INTERP entries', () => {
+describe('formatLocationRow INTERP entries', () => {
   it('passes synthetic points through without reclassification', () => {
     expect(formatLocationRow(interpPoint)).toBe(
       '2500,-34.61,-58.41,-1,-1,-1,-1,-1,1,INTERP',
@@ -135,7 +135,7 @@ describe('filterPreSessionSamples', () => {
     expect(filterPreSessionSamples([atEpoch], epochMs)).toEqual([atEpoch])
   })
 
-  it('keeps hardware-error entries — they occurred during the session', () => {
+  it('keeps hardware-error entries because they occurred during the session', () => {
     const error = { ...errorEntry, timestampMs: null }
     expect(filterPreSessionSamples([error], epochMs)).toEqual([error])
   })

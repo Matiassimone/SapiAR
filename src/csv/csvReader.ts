@@ -9,9 +9,9 @@ export interface LocationRow {
 }
 
 /**
- * A contiguous run of INTERP rows bounded by two real fixes — read back from
+ * A contiguous run of INTERP rows bounded by two real fixes, read back from
  * the CSV structure gpsInterpolation.ts already produced (this module never
- * re-runs gap detection; it only groups what is_interpolated=1 rows exist).
+ * re-runs gap detection, it only groups what is_interpolated=1 rows exist).
  */
 export interface GapRun {
   startMs: number
@@ -73,7 +73,7 @@ export function deriveGapRuns(rows: readonly LocationRow[]): GapRun[] {
       pendingInterp = 0
       lastFix = row
     }
-    // ERROR rows carry no timestamp: they neither bound nor break a run.
+    // ERROR rows carry no timestamp, so they neither bound nor break a run.
   }
   return runs
 }
@@ -91,7 +91,7 @@ export function parseFrameCounts(content: string): {
   return { front, back }
 }
 
-/** Raw data rows as column arrays — the row viewer renders these verbatim. */
+/** Raw data rows as column arrays. The row viewer renders these verbatim. */
 export function parseRawRows(content: string): string[][] {
   return dataLines(content).map((line) => line.split(','))
 }

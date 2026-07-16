@@ -56,11 +56,12 @@ jest.mock('expo-gps', () => ({
 
 interface FakeController {
   drain: jest.Mock
+  droppedCount: number
 }
 
-function fakeController(queues: number[][]): FakeController {
+function fakeController(queues: number[][], droppedCount = 0): FakeController {
   const pending = [...queues]
-  return { drain: jest.fn(() => pending.shift() ?? []) }
+  return { drain: jest.fn(() => pending.shift() ?? []), droppedCount }
 }
 
 function fakeVideoOutput(
@@ -145,7 +146,7 @@ async function startWith(
 }
 
 describe('startRecordingSession', () => {
-  it('creates both empty CSV files at start — Append mode never creates', async () => {
+  it('creates both empty CSV files at start because Append mode never creates', async () => {
     await startWith(fakeController([[]]), fakeController([[]]))
     // Before any flush has happened (no timer ticks yet):
     expect(mockFileCreates).toContain(
@@ -154,7 +155,7 @@ describe('startRecordingSession', () => {
     expect(mockFileCreates).toContain(
       'file:///docs/100000_Session/100000_LocationData.csv',
     )
-    // Truly empty: the header remains buffer-owned, written on first flush.
+    // Truly empty, the header remains buffer-owned, written on first flush.
     expect(mockFileWrites).toEqual({})
   })
 
@@ -225,7 +226,7 @@ describe('startRecordingSession', () => {
 
   it('writes metadata.json with counts, duration, fps, and resolution on stop', async () => {
     const front = fakeController([[], [100010, 100020]])
-    const back = fakeController([[], [100030]])
+    const back = fakeController([[], [100030]], 2)
     mockGpsQueue.push([], [gpsFix(100100)])
 
     const session = await startWith(front, back)
@@ -237,7 +238,7 @@ describe('startRecordingSession', () => {
     expect(metadata).toEqual({
       epochMs: 100000,
       durationMs: 32500,
-      frames: { front: 2, back: 1 },
+      frames: { front: 2, back: 1, frontDropped: 0, backDropped: 2 },
       gps: { real: 1, interpolated: 0, error: 0 },
       fps: { front: 30, back: 30 },
       resolution: {
@@ -263,6 +264,37 @@ describe('startRecordingSession', () => {
     expect(metadata.events).toEqual([
       { timestampMs: 100500, type: 'error', detail: 'mid-recording drop' },
     ])
+  })
+
+  it('records the negotiated resolution of a degraded rung, not the ideal target', async () => {
+    // A rung-2/3 session hands over ITS outputs. currentResolution must be
+    // whatever they negotiated, never the symbolic tier that was requested.
+    const binnedFront = fakeVideoOutput({ width: 1280, height: 960 })
+    const binnedBack = fakeVideoOutput({ width: 1280, height: 960 })
+    const session = await startRecordingSession({
+      frontFrames: fakeController([[]]) as never,
+      backFrames: fakeController([[]]) as never,
+      frontVideo: binnedFront as never,
+      backVideo: binnedBack as never,
+      fps: { front: 30, back: 30 },
+      cameraConfig: { step: 2, degraded: true, binned: true },
+      sessionEvents: mockSessionEvents,
+    })
+    await session.stop()
+
+    const metadata = JSON.parse(contentOf('metadata.json')) as {
+      resolution: unknown
+      cameraConfig: unknown
+    }
+    expect(metadata.resolution).toEqual({
+      front: { width: 1280, height: 960 },
+      back: { width: 1280, height: 960 },
+    })
+    expect(metadata.cameraConfig).toEqual({
+      step: 2,
+      degraded: true,
+      binned: true,
+    })
   })
 
   it('omits resolution from metadata when an output never reported one', async () => {

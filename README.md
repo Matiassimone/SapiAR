@@ -1,20 +1,152 @@
 # SapiAR
 
-Dual-camera + GPS data collection prototype — technical exercise for Sapios.
+Dual-camera + GPS data collection prototype, technical exercise for Sapios.
 
-## Status
+## Final Write-up
 
-Work in progress. This README is maintained as a running technical log
-during development; the final 200-400 word synchronization write-up
-(GOAL.md deliverable) will be distilled from the entries below once the
-pipeline is complete — not written from scratch at the end.
+Testing was done on a real iPhone 12 Pro (2020), not a simulator, since
+multi-cam capture and GPS motion need actual hardware. 30fps recorded
+cleanly start to finish on every device test. 60fps sometimes lost
+frame timestamps partway through a recording under sustained load,
+though video and GPS kept working fine. The deliverable records at
+30fps on purpose, not by default.
+
+### How the two data streams stay in sync
+
+Both CSVs share a Unix millisecond clock, but each one gets there
+differently. Camera frames carry a timestamp measured against time since
+the phone booted, not the real world clock. To fix that, the app reads
+the real world clock and the boot clock once, back to back, at session
+start. The gap between them becomes a fixed offset, added to every frame
+timestamp. Frame to frame timing still comes from the hardware, since
+the offset only repositions the series. GPS needs none of this. Its
+timestamp is already a real world clock reading from the location
+hardware.
+
+### Tradeoffs
+
+vision-camera's default per frame timestamp path runs a JavaScript
+function on every frame. Not a precision problem, since the value is
+identical, but it risks dropped frames under load and needs two extra
+dependencies. This app reads timestamps in native Swift code, with no
+JavaScript per frame. Native code never decides if a GPS point is
+accurate or needs interpolating. That logic lives in TypeScript,
+testable without a phone. Interpolation fills only real gaps between two
+GPS points, never past a recording's edges, and never with an invented
+speed or heading.
+
+### Given more time
+
+- Test more resolution and frame rate combinations to get 60fps reliable
+  on this phone, alongside exposing Apple's hardwareCost API to
+  JavaScript, missing from the camera library.
+- Support Android. The orchestration layer abstracts the phone, so this
+  means an Android camera module plus finishing the GPS module's Android
+  stub, not a rewrite.
+- Stream video and its timestamped GPS data to cloud storage as they're
+  recorded, using the same native to app handoff, into one combined
+  dataset instead of local files.
 
 ---
 
-## Final Write-up (Synchronization, Tradeoffs, Improvements)
+## Architecture
 
-_[To be written at checkpoint 11, distilled from the Technical Decision Log
-below. Placeholder — do not leave this section empty in the final commit.]_
+```mermaid
+flowchart TD
+    subgraph Native["Native Capture (Swift) — zero JS per frame or update"]
+        FTC["FrameTimestampController<br/>NativeCameraOutput, front + back"]
+        GPSMOD["ExpoGps Module<br/>CLLocationManager"]
+    end
+
+    subgraph Orchestration["Orchestration (TypeScript)"]
+        SM["sessionManager.ts<br/>generates epochMs + file paths, once"]
+        RS["recordingSession.ts<br/>drains all 3 native buffers every 1s"]
+    end
+
+    subgraph Assembly["Data Assembly (TypeScript, pure functions)"]
+        GI["gpsInterpolation.ts<br/>fills real gaps only, no extrapolation"]
+        CW["csvWriter.ts<br/>classifies OK / LOW_ACCURACY / ERROR / INTERP"]
+    end
+
+    subgraph Storage["Session Folder (disk)"]
+        FILES["epochMs_FrontVideo.mov<br/>epochMs_BackVideo.mov<br/>epochMs_FrameData.csv<br/>epochMs_LocationData.csv<br/>metadata.json"]
+    end
+
+    subgraph Viewer["Debug Viewer (read-only)"]
+        SD["session-debug.tsx<br/>csvReader + sessionValidation + map"]
+    end
+
+    FTC -->|drain| RS
+    GPSMOD -->|drain| RS
+    SM -->|paths and epochMs| RS
+    RS --> GI --> CW --> FILES
+    FILES -.->|read only, never written| SD
+```
+
+The boundary that matters most: anything touching a hardware timestamp
+lives in the Native Capture layer, on the capture thread, with zero JS
+involvement before the value exists in memory. Everything downstream of
+an already-captured value (interpolation, classification, formatting)
+lives in pure TypeScript. This split is why the pipeline stayed testable
+without a device for most of the project, and why the three real
+device-only bugs (checkpoint 8) were all inside the Native Capture layer,
+not the Assembly layer.
+
+---
+
+## Getting Started
+
+These are the exact steps that produced a working build from a clean
+clone, verified today.
+
+### Requirements
+
+- Xcode, current stable version.
+- A physical iPhone that supports Multi-Cam capture (iPhone XS or newer).
+  The simulator cannot open more than one camera at once, so live
+  preview and recording only work on a real device. Everything else
+  (browsing a previously recorded session in the debug tooling, for
+  example) works fine on simulator.
+- Node and npm. `npm --version` should be 11.10.0 or higher for
+  `.npmrc`'s security settings to take effect (see Prerequisites below if
+  updating npm fails).
+
+### Steps
+
+```bash
+git clone <repo-url>
+cd SapiAR
+npm ci
+npx expo prebuild --clean
+npx expo run:ios --device
+```
+
+Select your connected iPhone when prompted. First launch needs Xcode's
+developer profile trusted on the device (Prerequisites below covers this
+if the app installs but won't open).
+
+For a build that doesn't need Metro running nearby, useful for testing
+away from a computer, add `--configuration Release` to the last command
+instead.
+
+### What to expect
+
+- Camera and location permission prompts on first launch.
+- A live dual camera preview once permissions are granted, on a real
+  device.
+- A single record and stop button, plus a Sessions entry for reviewing
+  past recordings (CSVs, GPS map, validation checks) directly on the
+  device.
+- Two sample recorded sessions are already included at
+  `docs/sample-output/` for reference without needing to record anything
+  new — `1784233996822_Session/` (the featured example: 30fps, real
+  motion data, includes a config-ladder fallback to a binned resolution
+  and its diagnostics) and `1784205721552_Session/` (the original clean
+  30fps walk).
+
+Prerequisites below covers the specific errors this setup hit during
+development (CocoaPods version, npm version, device trust) and their
+fixes, in case any of them show up on a different machine.
 
 ---
 
@@ -25,6 +157,38 @@ Environment issues hit during development — documented so a fresh clone doesn'
 - **CocoaPods must be >= 1.13.0.** Older versions fail `pod install` with `Unrecognized option(s) always_out_of_date in script phase` — Expo's generated `Podfile` uses a script-phase option older CocoaPods doesn't recognize. Fix: `brew upgrade cocoapods` (or `gem install cocoapods`), then `cd ios && pod deintegrate && rm -rf Pods Podfile.lock && cd .. && npx expo run:ios`.
 - **npm CLI must be >= 11.10.0** for `.npmrc`'s `min-release-age` to take effect. Don't jump straight to `npm@latest` — as of npm v12, the engine requirement is Node `^22.22.2 || ^24.15.0 || >=26.0.0`; on an older Node, `npm install -g npm@latest` fails with `EBADENGINE`. Use `npm install -g npm@11` instead unless Node is already current.
 - **First run on a physical iOS device:** after `npx expo run:ios --device`, the app installs but launch fails with a code-signature error unless the developer profile is explicitly trusted: **Settings → General → VPN & Device Management → [Apple ID] → Trust**. Standard iOS behavior for free/personal developer accounts, not a build issue.
+
+---
+
+## TL;DR (Bitácora Highlights)
+
+Six findings worth reading first, each pointing at its full entry below.
+
+1. Frame timestamps use vision-camera v5's `NativeCameraOutput` extension
+   point instead of the JS-worklet Frame Processor Plugin path, avoiding
+   the exact per-frame JS hop the project's core principle forbids
+   (checkpoint 3).
+2. Two independent capture paths converge on the same Unix-ms axis
+   through different, documented routes. Frames anchor a host-clock
+   series once per session. GPS reads a wall-clock timestamp directly.
+   This is the real synchronization design (checkpoints 3-4).
+3. Native modules emit raw hardware values only. Every classification
+   (`OK`, `LOW_ACCURACY`, `ERROR`, `INTERP`) lives in pure, unit-tested
+   TypeScript, testable without a device (checkpoints 4, 6-7).
+4. Three device-only bugs were found and root-caused in vision-camera v5
+   itself. A crashing preview-buffer optimization, a broken
+   `setOutputSettings` under multi-cam, and missing resolution-negotiation
+   intent that silently capped quality 9x. None of these reproduced on
+   simulator (checkpoint 8).
+5. Real outdoor testing found a sustained-load resilience issue. 60fps
+   intermittently loses frame-timestamp delivery mid-recording under
+   multi-cam pressure while video and GPS stay healthy. 30fps proved
+   stable across every test, so the deliverable uses 30fps on purpose,
+   not by default (checkpoint 10).
+6. Two resilience layers shipped the same day instead of one unverified
+   guess. A degrading config ladder handles bring-up failures. A
+   persistent Events log handles observability. Both state their limits
+   honestly instead of hiding behind a green checkmark.
 
 ---
 
@@ -466,10 +630,10 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
 ### Pre-checkpoint-10 — ERROR sentinel proven on real hardware; resolution exported
 
 - **The ERROR sentinel row is now proven end-to-end on a real device** —
-  a 19 s indoor recording with GPS starved by airplane mode
-  (`docs/sample-output-error-path/`, supplementary evidence; the primary
-  sample output remains checkpoint 10's outdoor walk). The full
-  `LocationData.csv`:
+  a 19 s indoor recording with GPS starved by airplane mode. The sample
+  output folder for this specific finding was not kept in the repo, the
+  full `LocationData.csv` is quoted below. The deliverable sample output,
+  from checkpoint 10's outdoor walk, is in `docs/sample-output/`.
 
   ```csv
   Timestamp_unix_ms,Lat,Long,Speed_m_s,Course_deg,CourseAccuracy_deg,HorizontalAccuracy_m,VerticalAccuracy_m,is_interpolated,quality_flag
@@ -507,6 +671,53 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
   binning), so the value comes from the already-held video outputs in
   `RecordingDeps` — still no new capture path. Omitted (like `fps`) when
   never reported. TDD: 3 new/updated tests, 71 total.
+
+### Checkpoint 10 — sustained-load frame stall, distinct from bring-up
+
+Real outdoor testing surfaced a second camera-resilience issue — not the
+bring-up `hardwareCost` overage the config ladder (below) handles, but
+degradation **mid-recording**, under sustained load. Four consecutive
+recordings, same app session, no restart between them:
+
+| Test | Config                          | Gap from prior | Clean frames                                | Outcome                                               |
+| ---- | ------------------------------- | -------------- | ------------------------------------------- | ----------------------------------------------------- |
+| 1    | 60fps, long walk                | fresh launch   | 222.4s @ 60fps, both cams, near-zero jitter | 0 frames for the remaining 168.5s of a 390.9s session |
+| 2    | 60fps, airplane toggle mid-walk | +17s           | 0                                           | never delivered a single frame, entire 136.8s session |
+| 3    | 60fps, airplane full-session    | +9.9s          | 28.1s @ 60fps, both cams                    | 0 frames for the remaining 168.5s of a 196.6s session |
+| 4    | 30fps, short walk               | +53.3s         | 154.8s @ 30fps, full session                | clean throughout — chosen as the sample output        |
+
+Video (`.mov`, both cameras — confirmed by playback duration matching
+session duration) and GPS (1Hz uninterrupted through tests 1–3, unaffected
+by the frame-capture silence) were healthy in every test. Only
+`FrameTimestampController`'s delivery degraded — evidence iOS is
+selectively deprioritizing what it can treat as a non-essential stream
+under sustained multi-cam 60fps load, not tearing down the session.
+
+A striking, unverified coincidence: tests 1 and 3 died with **168.45s**
+and **168.46s** remaining in their respective sessions — 13ms apart,
+despite wildly different elapsed clean-capture time before the cutoff
+(222.4s vs 28.1s). Consistent with a shared, session-duration-independent
+cutoff rather than pure cumulative heat buildup — but two data points
+can't confirm a mechanism. Flagged as observation, not conclusion.
+
+Root-causing this precisely would need live
+`AVCaptureDevice.systemPressureState`/`ProcessInfo.thermalState`
+instrumentation across several real multi-minute recordings — out of
+scope today, same reasoning as the `hardwareCost` preflight deferral
+below. **Decision:** 30fps is the practical "highest available quality"
+for this multi-cam topology — `GOAL.md`'s own wording supports this once
+"available" is read as _sustainable for a real session_, not just the
+largest number a spec sheet allows. Test 4 (30fps) is the deliverable
+sample output; the three 60fps walks are retained as evidence for this
+finding, not discarded.
+
+Chose observability over an unverified fix: the Events tab (below) ships
+instead of active mid-session stall detection, which would need
+continuous frame-count polling logic built and tested same-day under
+deadline pressure. The tab's own empty/caveat state says explicitly that
+it can't catch this specific failure mode (no accompanying iOS-level
+event fires when it happens) — the gap is documented, not hidden behind
+a green checkmark.
 
 - **Intermittent black preview on unplugged cold launch — investigated,
   NOT root-caused.** Time-boxed investigation, honest outcome: the device

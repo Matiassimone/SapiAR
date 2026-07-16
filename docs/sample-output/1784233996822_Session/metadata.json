@@ -1,0 +1,33 @@
+{
+  "epochMs": 1784233996822,
+  "durationMs": 63650,
+  "frames": {
+    "front": 1908,
+    "back": 1908
+  },
+  "gps": {
+    "real": 64,
+    "interpolated": 0,
+    "error": 0
+  },
+  "events": [],
+  "fps": {
+    "front": 30,
+    "back": 30
+  },
+  "resolution": {
+    "front": {
+      "width": 1920,
+      "height": 1440
+    },
+    "back": {
+      "width": 1920,
+      "height": 1440
+    }
+  },
+  "cameraConfig": {
+    "step": 2,
+    "degraded": true,
+    "binned": true
+  }
+}

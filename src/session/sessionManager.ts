@@ -15,9 +15,9 @@ export interface Session {
 }
 
 /**
- * Pure path construction per GOAL.md §6 — every prefixed name is derived
- * from the one epochMs passed in (Architecture Rule #4: never re-derived
- * per file). Separated from the filesystem call so naming is unit-testable
+ * Every prefixed name is derived
+ * from the one epochMs passed in, generated once and never re-derived per
+ * file. Separated from the filesystem call so naming is unit-testable
  * without a device.
  */
 export function buildSessionPaths(
@@ -38,9 +38,9 @@ export function buildSessionPaths(
 /**
  * Generates the session identity and creates its folder. `Date.now()` here
  * is session bookkeeping (the folder-naming epoch GOAL.md §6 defines as
- * "the moment recording started"), not a data timestamp — every row in the
- * CSVs still carries only native hardware clocks (CLAUDE.md core principle;
- * Rule #4 assigns this exact generation point to sessionManager).
+ * "the moment recording started"), not a data timestamp. Every row in the
+ * CSVs still carries only native hardware clocks, this is the one
+ * deliberate exception to that rule, scoped to session identity only.
  */
 export function startSession(): Session {
   const epochMs = Date.now()

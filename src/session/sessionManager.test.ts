@@ -45,7 +45,7 @@ describe('buildSessionPaths', () => {
     )
   })
 
-  it('threads one epochMs through every prefixed name — never re-derived', () => {
+  it('threads one epochMs through every prefixed name, never re-derived', () => {
     const prefixed = [
       paths.rootUri,
       paths.frontVideoUri,

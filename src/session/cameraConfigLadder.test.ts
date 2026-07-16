@@ -33,7 +33,7 @@ describe('buildCandidateLadder', () => {
     ])
   })
 
-  it('preserves the user-selected fps on every rung — degradation never overrides it', () => {
+  it('preserves the user-selected fps on every rung, degradation never overrides it', () => {
     for (const candidate of buildCandidateLadder(60, TIERS)) {
       expect(candidate.fps).toBe(60)
     }

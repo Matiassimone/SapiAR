@@ -21,8 +21,8 @@ export interface RecordingDeps {
   fps: { front: number; back: number } | null
   cameraConfig: { step: number; degraded: boolean; binned: boolean } | null
   /**
-   * Returns every session event collected since app mount; stop() scopes
-   * them to this recording by timestamp — no lifecycle coupling with the
+   * Returns every session event collected since app mount. stop() scopes
+   * them to this recording by timestamp, with no lifecycle coupling to the
    * UI-owned collector (observability only, never influences recording).
    */
   sessionEvents: () => SessionEvent[]
@@ -59,9 +59,9 @@ function recordUntilStopped(recorder: Recorder): {
 }
 
 /**
- * Owns everything session-scoped: folder + paths, the two recorders, GPS
+ * Owns everything session-scoped. Folder and paths, the two recorders, GPS
  * start/stop, the drain/flush cadence, and metadata. The UI hands over the
- * mount-time camera objects and gets back a start/stop surface — no
+ * mount-time camera objects and gets back a start/stop surface. No
  * precision logic ever lives in the UI layer (CLAUDE.md Architecture).
  */
 export async function startRecordingSession(
@@ -70,13 +70,11 @@ export async function startRecordingSession(
   const session = startSession()
   const { epochMs, paths } = session
 
-  // FileHandle's Append mode opens-but-never-creates (found on device, first
-  // real recording) — the empty CSVs must exist before the first flush.
-  // Created here, not in sessionManager: readying the pipeline to record is
-  // orchestration, and sessionManager stays paths-and-folder only
-  // (checkpoint 5 boundary). Truly empty — headers remain buffer-owned,
-  // written on first flush (checkpoint 7). The .mov files need no
-  // counterpart: the Recorder creates its own output file.
+  // FileHandle Append opens but never creates (device-found bug, first real
+  // recording). The CSVs must exist before the first flush. Created here,
+  // not in sessionManager (checkpoint 5 keeps it paths-and-folder only).
+  // Truly empty, headers stay buffer-owned (checkpoint 7). The .mov files
+  // need no counterpart, the Recorder creates its own file.
   new File(paths.frameDataUri).create()
   new File(paths.locationDataUri).create()
 
@@ -87,9 +85,9 @@ export async function startRecordingSession(
     GPS_GAP_THRESHOLD_MS,
   )
 
-  // The timestamp controllers have been buffering since the preview
-  // mounted — none of that belongs to this session. GPS hasn't started yet,
-  // but a previous session may have left a tail behind.
+  // Controllers have buffered since preview mount, none of it is this
+  // session's. GPS is not started yet but a previous session may have left
+  // a tail.
   deps.frontFrames.drain()
   deps.backFrames.drain()
   ExpoGps.drain()
@@ -107,8 +105,8 @@ export async function startRecordingSession(
   ExpoGps.start()
 
   const drainIntoBuffers = (): void => {
-    // Second belt for the record-start boundary: a frame captured between
-    // the discard above and the recorders spinning up predates the session.
+    // A frame captured between the discard above and the recorders spinning
+    // up predates the session. Second belt for the start boundary.
     const inSession = (timestampMs: number): boolean => timestampMs >= epochMs
     frameBuffer.appendFrames(
       deps.frontFrames.drain().filter(inSession),
@@ -120,8 +118,8 @@ export async function startRecordingSession(
     locationBuffer.flush()
   }
 
-  // One 1s cadence for drain+append+flush: ~60 frame rows per write is
-  // already "periodic, not per-row" (CLAUDE.md) without a second timer.
+  // One 1s cadence drains all three natives and flushes. ~60 rows per write
+  // already satisfies "periodic, not per-row" (CLAUDE.md), no second timer.
   const interval = setInterval(drainIntoBuffers, 1000)
 
   return {
@@ -137,18 +135,21 @@ export async function startRecordingSession(
       ExpoGps.stop()
       drainIntoBuffers()
 
-      // Read at stop, not at mount: currentResolution populates
-      // asynchronously after the outputs connect (an immediate read races
-      // it — checkpoint 8's delayed log). By session end it has been
-      // stable for the whole recording.
+      // Read at stop, not mount. currentResolution populates async after
+      // connect (a mount-time read races it, checkpoint 8). By stop it has
+      // been stable all session.
       const frontResolution = deps.frontVideo.currentResolution
       const backResolution = deps.backVideo.currentResolution
       const metadata: SessionMetadata = {
         epochMs,
-        // Bookkeeping duration, same legal status as epochMs (checkpoint 5) —
-        // data rows only ever carry native hardware clocks.
+        // Bookkeeping, same legal status as epochMs (checkpoint 5). Data
+        // rows only ever carry native hardware clocks.
         durationMs: Date.now() - epochMs,
-        frames: frameBuffer.counts(),
+        frames: {
+          ...frameBuffer.counts(),
+          frontDropped: deps.frontFrames.droppedCount,
+          backDropped: deps.backFrames.droppedCount,
+        },
         gps: locationBuffer.counts(),
         fps: deps.fps,
         cameraConfig: deps.cameraConfig,

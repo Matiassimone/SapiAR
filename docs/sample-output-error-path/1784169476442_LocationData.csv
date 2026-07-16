@@ -1,3 +1,0 @@
-Timestamp_unix_ms,Lat,Long,Speed_m_s,Course_deg,CourseAccuracy_deg,HorizontalAccuracy_m,VerticalAccuracy_m,is_interpolated,quality_flag
--1,-1,-1,-1,-1,-1,-1,-1,0,ERROR
-1784169476533,-38.00871814204318,-57.550821264186716,-1,-1,-1,12.795014,30.970958114416394,0,OK

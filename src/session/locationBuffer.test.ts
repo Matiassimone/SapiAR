@@ -66,10 +66,10 @@ describe('createLocationBuffer', () => {
     expect(mockWrites).toHaveLength(0)
   })
 
-  it('drops pre-session cached fixes BEFORE interpolation — no synthetic points anchored on them', () => {
+  it('drops pre-session cached fixes BEFORE interpolation so no synthetic points anchor on them', () => {
     // Cached fix 40s before the epoch, then two session fixes 2s apart.
     // Wrong ordering (interpolate first) would fabricate INTERP rows from the
-    // cached anchor; correct ordering yields zero INTERP rows.
+    // cached anchor, correct ordering yields zero INTERP rows.
     const epochMs = 100000
     const buffer = createLocationBuffer('file:///s/loc.csv', epochMs, 3000)
     buffer.appendSamples([
@@ -107,7 +107,7 @@ describe('createLocationBuffer', () => {
     const rows = flushedContent()
       .split('\n')
       .filter((line) => line.startsWith('1000,'))
-    // The flush-N fix re-enters flush N+1 as interpolation context only —
+    // The flush-N fix re-enters flush N+1 as interpolation context only,
     // its row must exist exactly once, from flush N.
     expect(rows).toHaveLength(1)
   })

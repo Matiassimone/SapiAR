@@ -15,7 +15,7 @@ export interface FrameBuffer {
 /**
  * Accumulates formatted frame rows in memory and appends them to
  * FrameData.csv on flush. Batched (not per-row) so file I/O never sits in
- * the same cadence as capture — see CLAUDE.md Architecture table.
+ * the same cadence as capture.
  */
 export function createFrameBuffer(fileUri: string): FrameBuffer {
   const pending: string[] = []
