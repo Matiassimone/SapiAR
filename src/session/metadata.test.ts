@@ -4,7 +4,7 @@ describe('buildMetadataJson', () => {
   const input = {
     epochMs: 1752576000000,
     durationMs: 32500,
-    frames: { front: 1950, back: 780 },
+    frames: { front: 1950, back: 780, frontDropped: 0, backDropped: 3 },
     gps: { real: 31, interpolated: 4, error: 1 },
     fps: { front: 60, back: 24 },
     resolution: {

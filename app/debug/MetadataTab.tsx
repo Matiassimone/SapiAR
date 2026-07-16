@@ -1,5 +1,6 @@
-import { ScrollView, Text } from 'react-native'
+import { ScrollView, Text, View } from 'react-native'
 
+import { formatResolution } from './formatResolution'
 import { styles } from './sessionDebug.styles'
 import { InfoRow } from '../components/InfoRow'
 import { InfoSection } from '../components/InfoSection'
@@ -26,29 +27,20 @@ export function MetadataTab({ summary }: { summary: SessionSummary }) {
           value={`${metadata.durationMs} (${(metadata.durationMs / 1000).toFixed(1)}s)`}
         />
       </InfoSection>
-      <InfoSection title="Frames">
-        <InfoRow label="front" value={String(metadata.frames.front)} />
-        <InfoRow label="back" value={String(metadata.frames.back)} />
-      </InfoSection>
-      <InfoSection title="GPS">
-        <InfoRow label="real" value={String(metadata.gps.real)} />
-        <InfoRow
-          label="interpolated"
-          value={String(metadata.gps.interpolated)}
-        />
-        <InfoRow label="error" value={String(metadata.gps.error)} />
-      </InfoSection>
-      <InfoSection title="FPS (negotiated)">
-        {metadata.fps == null ? (
-          <InfoRow kind="neutral" label="fps" value="not recorded" />
+      <InfoSection title="Recording quality">
+        {metadata.resolution == null ? (
+          <InfoRow
+            kind="neutral"
+            label="Resolution"
+            value="not recorded (pre-export session)"
+          />
         ) : (
-          <>
-            <InfoRow label="front" value={String(metadata.fps.front)} />
-            <InfoRow label="back" value={String(metadata.fps.back)} />
-          </>
+          <View style={styles.qualityHeadline}>
+            <Text style={styles.qualityValue}>
+              {formatResolution(metadata.resolution)}
+            </Text>
+          </View>
         )}
-      </InfoSection>
-      <InfoSection title="Camera config">
         {metadata.cameraConfig == null ? (
           <InfoRow
             kind="neutral"
@@ -73,6 +65,42 @@ export function MetadataTab({ summary }: { summary: SessionSummary }) {
               label="binned"
               value={String(metadata.cameraConfig.binned)}
             />
+          </>
+        )}
+      </InfoSection>
+      <InfoSection title="Frames">
+        <InfoRow label="front" value={String(metadata.frames.front)} />
+        <InfoRow label="back" value={String(metadata.frames.back)} />
+        {metadata.frames.frontDropped != null && (
+          <>
+            <InfoRow
+              kind={metadata.frames.frontDropped > 0 ? 'fail' : 'pass'}
+              label="front dropped"
+              value={String(metadata.frames.frontDropped)}
+            />
+            <InfoRow
+              kind={metadata.frames.backDropped > 0 ? 'fail' : 'pass'}
+              label="back dropped"
+              value={String(metadata.frames.backDropped)}
+            />
+          </>
+        )}
+      </InfoSection>
+      <InfoSection title="GPS">
+        <InfoRow label="real" value={String(metadata.gps.real)} />
+        <InfoRow
+          label="interpolated"
+          value={String(metadata.gps.interpolated)}
+        />
+        <InfoRow label="error" value={String(metadata.gps.error)} />
+      </InfoSection>
+      <InfoSection title="FPS">
+        {metadata.fps == null ? (
+          <InfoRow kind="neutral" label="fps" value="not recorded" />
+        ) : (
+          <>
+            <InfoRow label="front" value={String(metadata.fps.front)} />
+            <InfoRow label="back" value={String(metadata.fps.back)} />
           </>
         )}
       </InfoSection>

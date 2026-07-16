@@ -145,7 +145,11 @@ export async function startRecordingSession(
         // Bookkeeping, same legal status as epochMs (checkpoint 5). Data
         // rows only ever carry native hardware clocks.
         durationMs: Date.now() - epochMs,
-        frames: frameBuffer.counts(),
+        frames: {
+          ...frameBuffer.counts(),
+          frontDropped: deps.frontFrames.droppedCount,
+          backDropped: deps.backFrames.droppedCount,
+        },
         gps: locationBuffer.counts(),
         fps: deps.fps,
         cameraConfig: deps.cameraConfig,

@@ -23,7 +23,18 @@ export interface SessionEvent {
 export interface SessionMetadata {
   epochMs: number
   durationMs: number
-  frames: { front: number; back: number }
+  /**
+   * Row counts per camera plus AVFoundation's dropped-frame counters
+   * (FrameTimestampController.droppedCount). Diagnostic for sustained-load
+   * stalls: a spike means our delegate was the bottleneck, zero while rows
+   * are missing means iOS stopped delivering entirely.
+   */
+  frames: {
+    front: number
+    back: number
+    frontDropped: number
+    backDropped: number
+  }
   gps: { real: number; interpolated: number; error: number }
   /** Negotiated fps per camera, null when the session never learned them. */
   fps: { front: number; back: number } | null

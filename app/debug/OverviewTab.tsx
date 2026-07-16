@@ -2,6 +2,7 @@ import { useVideoPlayer, VideoView } from 'expo-video'
 import { ScrollView, Text, View } from 'react-native'
 import MapView, { Marker, Polyline } from 'react-native-maps'
 
+import { formatResolution } from './formatResolution'
 import { styles } from './sessionDebug.styles'
 import { InfoRow } from '../components/InfoRow'
 import { InfoSection } from '../components/InfoSection'
@@ -85,6 +86,13 @@ export function OverviewTab({ summary }: { summary: SessionSummary }) {
       <ValidationCard summary={summary} />
 
       <InfoSection title="Frames">
+        {summary.metadata?.resolution != null && (
+          <InfoRow
+            kind="pass"
+            label="Resolution"
+            value={formatResolution(summary.metadata.resolution)}
+          />
+        )}
         <InfoRow label="Front" value={String(summary.frames.front)} />
         <InfoRow label="Back" value={String(summary.frames.back)} />
       </InfoSection>

@@ -25,6 +25,7 @@ export function buildCandidateLadder(
 ): CameraConfigCandidate[] {
   const [ideal, lower] = tiers
   if (ideal == null) return []
+
   const ladder: CameraConfigCandidate[] = [
     { step: 1, degraded: false, targetResolution: ideal, binned: false, fps },
     { step: 2, degraded: true, targetResolution: ideal, binned: true, fps },

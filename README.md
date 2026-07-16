@@ -18,20 +18,15 @@ different mechanisms reach the same axis, both traceable to hardware
 rather than an app-side clock read.
 
 vision-camera v5's Frame Processor Plugin path requires a synchronous JS
-worklet per frame. This isn't a timestamp-accuracy risk, but a
-completeness one (frame-drop pressure under backpressure) and an
-extra-dependency one. A custom native camera output avoids JS in the
+worklet per frame. This isn't a timestamp-accuracy risk.
+A custom native camera output avoids JS in the
 per-frame path entirely. Native modules deliberately emit only raw values,
 with CoreLocation's own `-1` encoding intact. All classification (the 20m
 accuracy threshold, `ERROR` sentinels, `INTERP` flags) lives in pure
 TypeScript, testable without a device. Interpolation only fills real gaps
 between two real fixes. There's no extrapolation past session edges, and
 synthetic rows never fabricate speed or course, since a bounding fix is
-often stationary itself. Three real device bugs were each root-caused
-only by testing on real hardware, never the simulator. A crashing
-preview-buffer optimization. A broken `setOutputSettings` under
-multi-cam. Missing resolution-negotiation intent that silently capped
-quality at 640x480.
+often stationary itself.
 
 The biggest open item, found during outdoor testing, is that sustained
 60fps multi-cam recording intermittently loses frame-timestamp delivery

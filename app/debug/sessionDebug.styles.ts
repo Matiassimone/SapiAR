@@ -78,6 +78,20 @@ export const styles = StyleSheet.create({
   videoBox: { flex: 1 },
   videoLabel: { color: '#ddd', fontSize: 13, marginBottom: 4 },
   video: { height: 160, backgroundColor: '#000', borderRadius: 8 },
+  qualityHeadline: {
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#2c2c2e',
+  },
+  qualityValue: {
+    color: '#fff',
+    fontSize: 26,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+  qualityCaption: { color: '#8e8e93', fontSize: 11, marginTop: 4 },
   eventsCaveat: {
     color: '#777',
     fontSize: 11,
