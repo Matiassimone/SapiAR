@@ -388,3 +388,77 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
   installed on the iPhone (build succeeded; auto-launch blocked by device
   lock). First real record/stop run confirms playable HEVC `.mov`s, CSV
   spot-checks, metadata, and the negotiated-FPS numbers.
+
+### Checkpoint 9 — session-debug.tsx
+
+- **Strictly a viewer:** every displayed value is read or grouped from the
+  already-written CSVs (`src/csv/csvReader.ts`, TDD'd with fixture content:
+  parsing, quality-flag counts, consecutive-INTERP gap runs). No
+  interpolation math, no classification logic — Architecture Rule #7 held
+  by construction.
+- **`react-native-maps@1.29.0`** with the default Apple Maps/MapKit
+  provider: no API key, no config plugin entry, no third-party tile
+  network. Its transitive `fsevents` install script was explicitly
+  **denied** (optional macOS dev watcher; watchman already covers Metro).
+- **Verified against the real 64 s session** (copied into the simulator's
+  app container, so the visual check ran on real data): frame counts
+  1928/1929 and flag counts OK:64 / INTERP:3 match checkpoint 8's numbers
+  exactly.
+- **The viewer corrected the record:** checkpoint 8's session report
+  described "3 INTERP rows filling one real gap" — the gap list shows the
+  truth from the CSV structure: **three separate ~5 s gaps** (at +1.0 s,
+  +7.2 s, +12.1 s), each filled with one synthetic point
+  (`ceil(5/3)−1 = 1`), all during the GPS warm-up window. metadata.json
+  only stores the interpolated total, so this structure is exactly what
+  the debug screen exists to surface.
+- **Honest visual-check caveat:** real-vs-INTERP marker colors exist
+  (blue/orange), but this session was recorded stationary — all 67 points
+  sit within ~1 m and overlap at any zoom. The distinction becomes
+  observable with checkpoint 10's outdoor walk; not a code defect.
+- **Session selection kept trivial** per the checkpoint: folder listing of
+  `{epochMs}_Session/` sorted newest-first, tap to open; a discreet
+  "Sessions" entry on the record screen (hidden while recording).
+
+#### Checkpoint 9 extension — inspection tooling (pre-checkpoint-10)
+
+- **Raw row viewers:** every FrameData/LocationData row, every column,
+  rendered verbatim from `parseRawRows` (a trivial split in csvReader —
+  still zero re-parsing logic), virtualized via FlatList for the ~1900-row
+  frame files.
+- **Video playback** via `expo-video@57.0.0` (57.0.1 was published hours
+  before this session — `min-release-age` blocked it again, prior version
+  pinned; no install scripts to review). Native controls only; file sizes
+  shown next to each player. Verified playing the real HEVC 1920×1440
+  session videos.
+- **Whole-session delete** with confirmation dialog, per amended
+  Architecture Rule #7 — the screen's only write-adjacent action, and it
+  never touches individual files.
+- **Automated validation panel:** CLAUDE.md's Validation Strategy checks
+  now run in-app as pure TDD'd functions (`sessionValidation.ts`, 10 new
+  tests): frame count vs `metadata.json`'s fps×duration (tolerance
+  max(5, 1%) — measured boundary slop is ±4 frames), live GPS continuity
+  against the real threshold, and ERROR-sentinel integrity that reports
+  "not exercised" instead of a false pass when a session has no error
+  rows. Verified against the 64 s session: front 1928/1932 PASS, back
+  1929/1932 PASS, continuity 2543 ms ≤ 3000 ms PASS, sentinel not
+  exercised. Write-up material ("what I'd improve"): the fact that four
+  recordings' checks were run by hand before this existed is itself the
+  limitation this feature names — validation tooling should have landed
+  with the pipeline, not after it.
+- **Also shown:** raw metadata.json, quality-flag percentages, video file
+  sizes. Deliberately NOT shown: video resolution cross-check — the
+  pipeline doesn't export negotiated resolution into metadata.json.
+  Flagged rather than probed fresh from the video files here: if the
+  cross-check matters, the pipeline should export it (checkpoint 10
+  candidate), not the viewer re-derive it.
+- **Post-hoc fix from device console testing: React keys must never be CSV
+  timestamps.** Duplicate-key warnings traced to detail-screen markers
+  keyed by `timestampMs` — CSV timestamps carry no uniqueness contract
+  (GOAL.md wants _every_ available update; redelivered fixes and same-ms
+  rounding are legitimate distinct rows). All row-derived keys are now
+  positional, and a regression test pins the contract (duplicate-timestamp
+  rows must survive parsing). The session list itself was exonerated:
+  folder names are filesystem-unique and the delete-refresh replaces whole
+  state. Same investigation surfaced and fixed a record-button double-tap
+  race (session start not claimed until after an await — a fast second tap
+  could launch a concurrent session over the same native buffers).
