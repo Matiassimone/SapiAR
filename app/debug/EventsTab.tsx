@@ -1,7 +1,6 @@
-import { ScrollView, Text } from 'react-native'
+import { ScrollView } from 'react-native'
 
 import { EVENT_ACCENT } from './sessionDebug.constants'
-import { styles } from './sessionDebug.styles'
 import { DataCard } from '../components/DataCard'
 import { InfoRow } from '../components/InfoRow'
 import { InfoSection } from '../components/InfoSection'
@@ -56,7 +55,6 @@ export function EventsTab({ summary }: { summary: SessionSummary }) {
           ]}
         />
       ))}
-      {caveat}
     </ScrollView>
   )
 }
