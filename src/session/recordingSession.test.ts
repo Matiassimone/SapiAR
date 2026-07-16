@@ -136,6 +136,7 @@ async function startWith(
     frontVideo: frontVideo as never,
     backVideo: backVideo as never,
     fps: { front: 30, back: 30 },
+    cameraConfig: { step: 1, degraded: false, binned: false },
   })
 }
 
@@ -239,6 +240,7 @@ describe('startRecordingSession', () => {
         front: { width: 1920, height: 1440 },
         back: { width: 1920, height: 1440 },
       },
+      cameraConfig: { step: 1, degraded: false, binned: false },
     })
   })
 

@@ -11,6 +11,7 @@ describe('buildMetadataJson', () => {
       front: { width: 1920, height: 1440 },
       back: { width: 1920, height: 1440 },
     },
+    cameraConfig: { step: 1, degraded: false, binned: false },
   }
 
   it('serializes the session summary as parseable JSON', () => {
@@ -28,6 +29,7 @@ describe('buildMetadataJson', () => {
       frames: input.frames,
       gps: input.gps,
       resolution: input.resolution,
+      cameraConfig: input.cameraConfig,
     })
   })
 
@@ -41,6 +43,28 @@ describe('buildMetadataJson', () => {
       frames: input.frames,
       gps: input.gps,
       fps: input.fps,
+      cameraConfig: input.cameraConfig,
+    })
+  })
+
+  it('records a degraded ladder rung verbatim and omits cameraConfig when null', () => {
+    const degraded = buildMetadataJson({
+      ...input,
+      cameraConfig: { step: 2, degraded: true, binned: true },
+    })
+    expect(JSON.parse(degraded)).toMatchObject({
+      cameraConfig: { step: 2, degraded: true, binned: true },
+    })
+    const withoutConfig: unknown = JSON.parse(
+      buildMetadataJson({ ...input, cameraConfig: null }),
+    )
+    expect(withoutConfig).toEqual({
+      epochMs: input.epochMs,
+      durationMs: input.durationMs,
+      frames: input.frames,
+      gps: input.gps,
+      fps: input.fps,
+      resolution: input.resolution,
     })
   })
 })

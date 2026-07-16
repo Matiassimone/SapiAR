@@ -9,13 +9,20 @@ import {
   CommonResolutions,
   NativePreviewView,
   VisionCamera,
+  type CameraDevice,
   type CameraPreviewOutput,
   type CameraSession,
   type CameraSessionConnection,
   type CameraVideoOutput,
+  type ListenerSubscription,
 } from 'react-native-vision-camera'
 
 import SessionDebugScreen from './app/session-debug'
+import {
+  buildCandidateLadder,
+  nextCandidate,
+  type CameraConfigCandidate,
+} from './src/session/cameraConfigLadder'
 import {
   startRecordingSession,
   type ActiveRecording,
@@ -40,6 +47,13 @@ export default function App() {
   const [elapsedS, setElapsedS] = useState<number | null>(null)
   const [showDebug, setShowDebug] = useState(false)
   const [targetFps, setTargetFps] = useState(DEFAULT_FPS)
+  // Non-null = the camera pipeline is known-unhealthy; the string is shown
+  // in a tappable banner and tapping bumps retryNonce to force a full
+  // session teardown + renegotiation (the same proven path an fps change
+  // takes). Added after intermittent black previews on unplugged cold
+  // launches — see README Pre-checkpoint-10.
+  const [cameraHealth, setCameraHealth] = useState<string | null>(null)
+  const [retryNonce, setRetryNonce] = useState(0)
   const recordingRef = useRef<ActiveRecording | null>(null)
   const startingRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -47,6 +61,203 @@ export default function App() {
   useEffect(() => {
     let session: CameraSession | undefined
     let cancelled = false
+    const healthSubs: ListenerSubscription[] = []
+
+    // First-frame gate, reusing the health watchdog's signal (count === 0
+    // on a timestamp controller): resolves true as soon as both cameras
+    // have delivered a frame, false on the 5 s deadline, cancellation, or
+    // an external failure (interruption/error during bring-up).
+    const waitForFirstFrames = (
+      frontFrames: { count: number },
+      backFrames: { count: number },
+      registerFail: (fail: () => void) => void,
+    ): Promise<boolean> =>
+      new Promise((resolve) => {
+        let ticks = 0
+        const poll = setInterval(() => {
+          if (frontFrames.count > 0 && backFrames.count > 0) {
+            clearInterval(poll)
+            resolve(true)
+          } else if (cancelled || ++ticks >= 25) {
+            clearInterval(poll)
+            resolve(false)
+          }
+        }, 200)
+        registerFail(() => {
+          clearInterval(poll)
+          resolve(false)
+        })
+      })
+
+    // One full bring-up attempt with a single ladder candidate: fresh
+    // outputs + session per attempt (a failed session's outputs are never
+    // reused). Returns null on any failure — the caller moves down the
+    // ladder. Silent by design: only ladder exhaustion reaches the user.
+    const attemptCandidate = async (
+      candidate: CameraConfigCandidate,
+      devices: { front: CameraDevice; back: CameraDevice },
+    ): Promise<CameraRig | null> => {
+      const previews = {
+        front: VisionCamera.createPreviewOutput(),
+        back: VisionCamera.createPreviewOutput(),
+      }
+      const frontFrames = createFrameTimestampController()
+      const backFrames = createFrameTimestampController()
+
+      // The candidate's target expresses GOAL.md's "highest available
+      // quality" as negotiation intent (rung 1: HIGHEST_4_3, non-binned) —
+      // multi-cam formats on this hardware are 4:3 sensor-native families.
+      // The target alone is NOT enough: without the resolutionBias + binned
+      // constraints below, the multi-cam negotiator settles on its smallest
+      // binned format (640×480, verified on device) regardless of any
+      // output's target resolution.
+      const createVideo = (): CameraVideoOutput =>
+        VisionCamera.createVideoOutput({
+          targetResolution: candidate.targetResolution,
+        })
+      const frontVideo = createVideo()
+      const backVideo = createVideo()
+
+      let frontFps: number | null = null
+      let backFps: number | null = null
+
+      // Video outputs join the session at mount: reconfiguring a running
+      // session re-negotiates formats and glitches the preview; an idle
+      // recorder output does no encoding work (see checkpoint 8 design doc).
+      const connections: CameraSessionConnection[] = [
+        {
+          input: devices.front,
+          outputs: [
+            { output: previews.front, mirrorMode: 'auto' },
+            { output: frontFrames.getCameraOutput(), mirrorMode: 'auto' },
+            { output: frontVideo, mirrorMode: 'auto' },
+          ],
+          constraints: [
+            { fps: candidate.fps },
+            { resolutionBias: frontVideo },
+            { binned: candidate.binned },
+          ],
+          onSessionConfigSelected: (config) => {
+            frontFps = config.selectedFPS ?? null
+          },
+        },
+        {
+          input: devices.back,
+          outputs: [
+            { output: previews.back, mirrorMode: 'auto' },
+            { output: backFrames.getCameraOutput(), mirrorMode: 'auto' },
+            { output: backVideo, mirrorMode: 'auto' },
+          ],
+          constraints: [
+            { fps: candidate.fps },
+            { resolutionBias: backVideo },
+            { binned: candidate.binned },
+          ],
+          onSessionConfigSelected: (config) => {
+            backFps = config.selectedFPS ?? null
+          },
+        },
+      ]
+
+      let attemptSession: CameraSession | undefined
+      try {
+        attemptSession = await VisionCamera.createCameraSession(true)
+        // Session-health listeners — the JS bridge of AVFoundation's
+        // interruption/runtime-error notifications. Role switches at first
+        // frame: before it they fail this bring-up attempt (ladder mode,
+        // silent); after it they feed the red banner with the actual cause
+        // (e.g. 'video-device-not-available-due-to-system-pressure').
+        let broughtUp = false
+        let failBringUp: (() => void) | undefined
+        healthSubs.push(
+          attemptSession.addOnErrorListener((error) => {
+            if (broughtUp) {
+              setCameraHealth(`Camera error: ${error.message} — tap to retry`)
+            } else {
+              failBringUp?.()
+            }
+          }),
+          attemptSession.addOnInterruptionStartedListener((reason) => {
+            if (broughtUp) {
+              setCameraHealth(`Camera interrupted: ${reason} — tap to retry`)
+            } else {
+              failBringUp?.()
+            }
+          }),
+          attemptSession.addOnInterruptionEndedListener(() => {
+            if (broughtUp) setCameraHealth(null)
+          }),
+          attemptSession.addOnStartedListener(() =>
+            console.log('[camera-health] session started'),
+          ),
+          attemptSession.addOnStoppedListener(() =>
+            console.log('[camera-health] session stopped'),
+          ),
+        )
+        await attemptSession.configure(connections)
+        // setOutputSettings is NEVER called: under AVCaptureMultiCamSession
+        // it throws an uncatchable ObjC exception on every attempt — binned
+        // or non-binned format, h265 listed in getSupportedVideoCodecs() or
+        // not (verified across five on-device configurations; vision-camera
+        // v5 library bug). The library's default codec is empirically
+        // HEVC/hvc1 on this hardware, satisfying GOAL.md §1's "HEVC
+        // preferred" — the one-shot log below is the per-run evidence.
+        console.log(
+          `[camera-config] rung ${candidate.step} codecs — front: ${frontVideo.getSupportedVideoCodecs().join('/')}, ` +
+            `back: ${backVideo.getSupportedVideoCodecs().join('/')} ` +
+            '(relying on library default; setOutputSettings crashes under multi-cam)',
+        )
+        if (cancelled) {
+          void attemptSession.stop()
+          return null
+        }
+        await attemptSession.start()
+        const framesFlowing = await waitForFirstFrames(
+          frontFrames,
+          backFrames,
+          (fail) => {
+            failBringUp = fail
+          },
+        )
+        if (!framesFlowing || cancelled) {
+          void attemptSession.stop()
+          return null
+        }
+        broughtUp = true
+        // Delayed read: currentResolution populates asynchronously after
+        // the connections form — an immediate read after start() races it.
+        setTimeout(() => {
+          console.log(
+            `[camera-config] negotiated resolutions — front: ${JSON.stringify(frontVideo.currentResolution)}, back: ${JSON.stringify(backVideo.currentResolution)}, fps — front: ${String(frontFps)}, back: ${String(backFps)}`,
+          )
+        }, 3000)
+        session = attemptSession
+        return {
+          previews,
+          recordingDeps: {
+            frontFrames,
+            backFrames,
+            frontVideo,
+            backVideo,
+            fps:
+              frontFps != null && backFps != null
+                ? { front: frontFps, back: backFps }
+                : null,
+            cameraConfig: {
+              step: candidate.step,
+              degraded: candidate.degraded,
+              binned: candidate.binned,
+            },
+          },
+        }
+      } catch (error: unknown) {
+        console.log(
+          `[camera-config] rung ${candidate.step} failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        void attemptSession?.stop()
+        return null
+      }
+    }
 
     const setup = async (): Promise<void> => {
       const cameraGranted =
@@ -91,104 +302,40 @@ export default function App() {
         return
       }
 
-      const previews = {
-        front: VisionCamera.createPreviewOutput(),
-        back: VisionCamera.createPreviewOutput(),
-      }
-      const frontFrames = createFrameTimestampController()
-      const backFrames = createFrameTimestampController()
-
-      // HIGHEST_4_3 expresses GOAL.md's "highest available quality" as
-      // negotiation intent — multi-cam formats on this hardware are 4:3
-      // sensor-native families. The target alone is NOT enough: without the
-      // resolutionBias + binned:false constraints below, the multi-cam
-      // negotiator settles on its smallest binned format (640×480, verified
-      // on device) regardless of any output's target resolution.
-      const createVideo = (): CameraVideoOutput =>
-        VisionCamera.createVideoOutput({
-          targetResolution: CommonResolutions.HIGHEST_4_3,
+      // Degradation ladder for intermittent hardwareCost failures
+      // (-11872) at bring-up: ideal config first, then Apple's documented
+      // mitigations. Symbolic tiers, not device pixel values — see
+      // docs/design/2026-07-16-camera-config-ladder.md.
+      const ladder = buildCandidateLadder(targetFps, [
+        CommonResolutions.HIGHEST_4_3,
+        CommonResolutions.FHD_4_3,
+      ])
+      let failures = 0
+      let candidate = nextCandidate(ladder, failures)
+      while (candidate != null && !cancelled) {
+        const rigForCandidate = await attemptCandidate(candidate, {
+          front: frontDevice,
+          back: backDevice,
         })
-      const frontVideo = createVideo()
-      const backVideo = createVideo()
-
-      let frontFps: number | null = null
-      let backFps: number | null = null
-
-      // Video outputs join the session at mount: reconfiguring a running
-      // session re-negotiates formats and glitches the preview; an idle
-      // recorder output does no encoding work (see checkpoint 8 design doc).
-      const connections: CameraSessionConnection[] = [
-        {
-          input: frontDevice,
-          outputs: [
-            { output: previews.front, mirrorMode: 'auto' },
-            { output: frontFrames.getCameraOutput(), mirrorMode: 'auto' },
-            { output: frontVideo, mirrorMode: 'auto' },
-          ],
-          constraints: [
-            { fps: targetFps },
-            { resolutionBias: frontVideo },
-            { binned: false },
-          ],
-          onSessionConfigSelected: (config) => {
-            frontFps = config.selectedFPS ?? null
-          },
-        },
-        {
-          input: backDevice,
-          outputs: [
-            { output: previews.back, mirrorMode: 'auto' },
-            { output: backFrames.getCameraOutput(), mirrorMode: 'auto' },
-            { output: backVideo, mirrorMode: 'auto' },
-          ],
-          constraints: [
-            { fps: targetFps },
-            { resolutionBias: backVideo },
-            { binned: false },
-          ],
-          onSessionConfigSelected: (config) => {
-            backFps = config.selectedFPS ?? null
-          },
-        },
-      ]
-      session = await VisionCamera.createCameraSession(true)
-      await session.configure(connections)
-      // setOutputSettings is NEVER called: under AVCaptureMultiCamSession it
-      // throws an uncatchable ObjC exception on every attempt — binned or
-      // non-binned format, h265 listed in getSupportedVideoCodecs() or not
-      // (verified across five on-device configurations; vision-camera v5
-      // library bug). The library's default codec is empirically HEVC/hvc1
-      // on this hardware, satisfying GOAL.md §1's "HEVC preferred" — the
-      // one-shot log below is the per-run evidence for that reliance.
-      console.log(
-        `[camera-config] codecs — front: ${frontVideo.getSupportedVideoCodecs().join('/')}, ` +
-          `back: ${backVideo.getSupportedVideoCodecs().join('/')} ` +
-          '(relying on library default; setOutputSettings crashes under multi-cam)',
-      )
-      if (cancelled) return
-      await session.start()
-      // Delayed read: currentResolution populates asynchronously after the
-      // connections form — an immediate read after start() races it.
-      setTimeout(() => {
-        console.log(
-          `[camera-config] negotiated resolutions — front: ${JSON.stringify(frontVideo.currentResolution)}, back: ${JSON.stringify(backVideo.currentResolution)}, fps — front: ${String(frontFps)}, back: ${String(backFps)}`,
-        )
-      }, 3000)
-
-      setRig({
-        previews,
-        recordingDeps: {
-          frontFrames,
-          backFrames,
-          frontVideo,
-          backVideo,
-          fps:
-            frontFps != null && backFps != null
-              ? { front: frontFps, back: backFps }
-              : null,
-        },
-      })
-      setStatus('')
+        if (rigForCandidate != null) {
+          if (candidate.degraded) {
+            console.log(
+              `[camera-config] ideal config failed at bring-up; running degraded rung ${candidate.step} (binned: ${String(candidate.binned)})`,
+            )
+          }
+          setRig(rigForCandidate)
+          setStatus('')
+          return
+        }
+        failures += 1
+        candidate = nextCandidate(ladder, failures)
+      }
+      if (!cancelled) {
+        // Every rung failed — only now does the failure reach the user.
+        // The banner's manual tap restarts the whole ladder from rung 1.
+        setStatus('')
+        setCameraHealth('Camera not responding — tap to retry')
+      }
     }
 
     setup().catch((error: unknown) => {
@@ -196,15 +343,17 @@ export default function App() {
     })
     return () => {
       cancelled = true
+      for (const sub of healthSubs) sub.remove()
       if (timerRef.current != null) clearInterval(timerRef.current)
       void recordingRef.current?.stop()
       ExpoGps.stop()
       void session?.stop()
     }
-    // Re-running on fps change tears the camera session down and negotiates
-    // fresh — only reachable between recordings (the debug screen that hosts
-    // the setting is hidden while recording), never a live renegotiation.
-  }, [targetFps])
+    // Re-running on fps change or a health-banner retry tears the camera
+    // session down and negotiates fresh — only reachable between recordings
+    // (the debug screen that hosts the setting is hidden while recording,
+    // and the banner is hidden too), never a live renegotiation.
+  }, [targetFps, retryNonce])
 
   const toggleRecording = async (): Promise<void> => {
     if (rig == null) return
@@ -244,7 +393,12 @@ export default function App() {
           <SessionDebugScreen
             onClose={() => setShowDebug(false)}
             targetFps={targetFps}
-            onChangeTargetFps={setTargetFps}
+            onChangeTargetFps={(fps) => {
+              // A pending health banner is stale once the session is about
+              // to renegotiate (the effect re-runs on this change).
+              setCameraHealth(null)
+              setTargetFps(fps)
+            }}
           />
         </SafeAreaProvider>
       </GestureHandlerRootView>
@@ -287,6 +441,17 @@ export default function App() {
       )}
       {rig != null && status !== '' && (
         <Text style={styles.errorBanner}>{status}</Text>
+      )}
+      {cameraHealth != null && !isRecording && (
+        <Pressable
+          style={styles.healthBanner}
+          onPress={() => {
+            setCameraHealth(null)
+            setRetryNonce((nonce) => nonce + 1)
+          }}
+        >
+          <Text style={styles.healthText}>{cameraHealth}</Text>
+        </Pressable>
       )}
       {!isRecording && (
         <Pressable style={styles.debugEntry} onPress={() => setShowDebug(true)}>
@@ -350,6 +515,21 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: '#e33',
+  },
+  healthBanner: {
+    position: 'absolute',
+    top: 100,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(200,40,40,0.9)',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    maxWidth: '85%',
+  },
+  healthText: {
+    color: '#fff',
+    fontSize: 14,
+    textAlign: 'center',
   },
   debugEntry: {
     position: 'absolute',

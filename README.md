@@ -507,3 +507,95 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
   binning), so the value comes from the already-held video outputs in
   `RecordingDeps` — still no new capture path. Omitted (like `fps`) when
   never reported. TDD: 3 new/updated tests, 71 total.
+
+- **Intermittent black preview on unplugged cold launch — investigated,
+  NOT root-caused.** Time-boxed investigation, honest outcome: the device
+  was reachable only over USB tonight (the failing condition is
+  specifically _unplugged_ cold launch, which may not reproduce cabled),
+  a cold launch loads the embedded JS bundle (so `console.log` evidence
+  never reaches Metro), and streaming the device's unified log needs a
+  cabled Console.app session. What static analysis does rule out: the
+  configure-before-discovery race — `App.tsx` awaits
+  `createDeviceFactory()` → combination selection →
+  `createCameraSession()` → `configure()` → `start()` strictly
+  sequentially, so device discovery is fully resolved before `configure()`
+  on every launch, cold or warm. The "resolved after ~5 relaunches"
+  observation remains consistent with either a system-level interruption
+  (thermal/system pressure) or a session that silently never started —
+  indistinguishable without the signals below.
+- **Safety net shipped instead of a guessed fix: a camera health banner
+  that doubles as the diagnostic instrument.** vision-camera v5 already
+  bridges the exact AVFoundation notifications the investigation wanted
+  (`addOnErrorListener`, `addOnInterruptionStartedListener` with reasons
+  including `video-device-not-available-due-to-system-pressure`,
+  `addOnStarted/StoppedListener`) — no native code needed (Ponytail
+  rung 5). Two layers: (1) a 5 s frame-flow watchdog armed before
+  `configure()` (so a hang in `configure()`/`start()` still trips it) —
+  if either camera's timestamp controller has delivered zero frames,
+  a "Camera not responding — tap to retry" banner appears; (2) session
+  listeners that put the _interruption reason or error message_ in the
+  banner text. Tapping retries via the same teardown-and-renegotiate
+  path an fps change takes (already device-proven). If the black preview
+  recurs on tomorrow's walk, the screen itself now distinguishes the
+  three hypotheses: banner with an interruption reason → system-level;
+  "not responding" banner → session never delivered (our sequencing);
+  no banner but black preview → preview-layer issue, frames are flowing.
+  Verified on simulator: clean boot with no false banner (the watchdog
+  is never armed on the unsupported-hardware early return), banner
+  renders and is tappable when forced. The stall itself can't be forced
+  on hardware on demand — the retry path's mechanism is the proven fps
+  reconfigure path.
+- **Rebuild before the walk:** tonight's changes (resolution export,
+  health banner) are pure JS — a standalone/embedded-bundle launch runs
+  the OLD bundle until the app is rebuilt to the device (`npx expo
+run:ios --device`). Do this before leaving.
+
+- **Black-preview root cause confirmed (Apple docs/WWDC19), correct fix
+  identified and deliberately deferred.** `AVCaptureMultiCamSession`
+  exposes `hardwareCost` — readable once connections are built, before
+  `startRunning` — and refuses to start at ≥ 1.0. Checkpoint 8's
+  `resolutionBias` + `binned: false` config sits close to that ceiling,
+  which explains the _intermittency_: launch-to-launch variance pushes it
+  over sometimes, not always. The correct fix is a pre-flight check
+  (`hardwareCost >= 0.9` → request a binned format for the timestamp
+  outputs' connections — Apple's own stated mitigation, same target
+  resolution at lower cost). **vision-camera 5.1.0 does not expose
+  `hardwareCost` anywhere** — verified absent from the TS specs, the
+  generated Nitro types, and the library's own iOS Swift (it never reads
+  the property). Implementing the preflight means new native surface, and
+  new Swift the morning of the deliverable walk is exactly the wrong
+  risk — deferred past the deadline, documented here instead of hidden.
+  The shipped mitigation remains the health banner + tap-to-retry (the
+  retry re-runs the full teardown/renegotiation, which re-rolls the cost
+  dice — consistent with "resolved after ~5 relaunches"). First-class
+  "given more time" material, alongside an upstream PR exposing
+  `hardwareCost`/`systemPressureCost` to JS.
+
+- **Degrading config ladder shipped — the practical alternative to the
+  unreachable `hardwareCost` preflight.** Since neither `hardwareCost`
+  nor a session back-reference is reachable from our code (previous
+  entry), the mitigation inverts: instead of predicting the failure,
+  recover from it. An ordered candidate ladder — (1) ideal:
+  HIGHEST_4_3-class target, non-binned; (2) same target, binned
+  (Apple's documented first fix for -11872: same resolution class, less
+  bandwidth); (3) one tier down, binned — is tried automatically at
+  bring-up. Failure signals: a synchronous `configure()`/`start()`
+  throw, an interruption/error listener firing before the first frame,
+  or the existing 5 s zero-frame watchdog (restructured into a
+  per-attempt first-frame gate, same signal). Escalation is silent; the
+  red banner now means "the whole ladder failed," and its manual tap
+  restarts from rung 1 — a fresh hardwareCost roll, so auto and manual
+  retry can't race (all ladder state is local to one effect run).
+  **Device-agnostic by construction, not tuning:** vision-camera
+  exposes no per-device format list (verified — `CameraDevice` has only
+  `supportedPixelFormats`), so rungs are symbolic negotiation targets
+  (library tier constants, zero iPhone-12-Pro pixel values); on any
+  hardware, each target negotiates to "this class or the nearest
+  supported." The user's FPS-picker choice is preserved on every rung —
+  the ladder never overrides an explicit setting. Ladder selection is a
+  pure function (`cameraConfigLadder.ts`, TDD, 5 tests). Transparency:
+  metadata.json now records `cameraConfig: { step, degraded, binned }`
+  and the debug screen's Metadata tab shows "Ideal config" vs "Degraded
+  fallback config" — a reviewer can always tell whether a session's
+  quality was self-selected as a compromise. Design note:
+  `docs/design/2026-07-16-camera-config-ladder.md`.

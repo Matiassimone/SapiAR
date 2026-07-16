@@ -15,6 +15,7 @@ export interface RecordingDeps {
   frontVideo: CameraVideoOutput
   backVideo: CameraVideoOutput
   fps: { front: number; back: number } | null
+  cameraConfig: { step: number; degraded: boolean; binned: boolean } | null
 }
 
 export interface ActiveRecording {
@@ -140,6 +141,7 @@ export async function startRecordingSession(
         frames: frameBuffer.counts(),
         gps: locationBuffer.counts(),
         fps: deps.fps,
+        cameraConfig: deps.cameraConfig,
         resolution:
           frontResolution != null && backResolution != null
             ? {
