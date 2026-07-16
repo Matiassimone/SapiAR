@@ -1,0 +1,27 @@
+{
+  "epochMs": 1784205721552,
+  "durationMs": 154933,
+  "frames": {
+    "front": 4646,
+    "back": 4644
+  },
+  "gps": {
+    "real": 155,
+    "interpolated": 0,
+    "error": 0
+  },
+  "fps": {
+    "front": 30,
+    "back": 30
+  },
+  "resolution": {
+    "front": {
+      "width": 1920,
+      "height": 1440
+    },
+    "back": {
+      "width": 1920,
+      "height": 1440
+    }
+  }
+}
