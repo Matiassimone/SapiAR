@@ -3,6 +3,8 @@ import type { GpsSample } from 'expo-gps'
 import { startRecordingSession } from './recordingSession'
 
 const mockFileWrites: Record<string, string[]> = {}
+let mockEvents: { timestampMs: number; type: 'error'; detail: string }[] = []
+const mockSessionEvents = () => mockEvents
 const mockFileCreates: string[] = []
 const mockGpsQueue: GpsSample[][] = []
 const mockGpsStart = jest.fn()
@@ -110,6 +112,7 @@ function contentOf(uriSuffix: string): string {
 }
 
 beforeEach(() => {
+  mockEvents = []
   jest.useFakeTimers()
   for (const key of Object.keys(mockFileWrites)) delete mockFileWrites[key]
   mockFileCreates.length = 0
@@ -137,6 +140,7 @@ async function startWith(
     backVideo: backVideo as never,
     fps: { front: 30, back: 30 },
     cameraConfig: { step: 1, degraded: false, binned: false },
+    sessionEvents: mockSessionEvents,
   })
 }
 
@@ -241,7 +245,24 @@ describe('startRecordingSession', () => {
         back: { width: 1920, height: 1440 },
       },
       cameraConfig: { step: 1, degraded: false, binned: false },
+      events: [],
     })
+  })
+
+  it('scopes session events to the recording window by timestamp', async () => {
+    mockEvents = [
+      { timestampMs: 99000, type: 'error', detail: 'pre-session noise' },
+      { timestampMs: 100500, type: 'error', detail: 'mid-recording drop' },
+    ]
+    const session = await startWith(fakeController([[]]), fakeController([[]]))
+    await session.stop()
+
+    const metadata = JSON.parse(contentOf('metadata.json')) as {
+      events: { detail: string }[]
+    }
+    expect(metadata.events).toEqual([
+      { timestampMs: 100500, type: 'error', detail: 'mid-recording drop' },
+    ])
   })
 
   it('omits resolution from metadata when an output never reported one', async () => {

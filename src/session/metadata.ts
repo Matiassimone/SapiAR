@@ -3,6 +3,25 @@ interface CameraResolution {
   height: number
 }
 
+/**
+ * A camera-session event surfaced by iOS during the app run
+ * (interruption, runtime error, session start/stop), captured by the
+ * native listeners in App.tsx. timestampMs is Date.now() bookkeeping —
+ * same legal status as epochMs/durationMs (checkpoint 5): there is no
+ * hardware clock for "the OS delivered a notification," and these never
+ * substitute for a data-row timestamp.
+ */
+export interface SessionEvent {
+  timestampMs: number
+  type:
+    | 'started'
+    | 'stopped'
+    | 'interruption-started'
+    | 'interruption-ended'
+    | 'error'
+  detail: string
+}
+
 export interface SessionMetadata {
   epochMs: number
   durationMs: number
@@ -23,6 +42,13 @@ export interface SessionMetadata {
    * reviewer can tell a self-selected compromise from full quality.
    */
   cameraConfig: { step: number; degraded: boolean; binned: boolean } | null
+  /**
+   * iOS-surfaced session events during this recording, chronological.
+   * Always written — an empty array is the "clean session" signal (as far
+   * as iOS reported; silent degradation with no system event is invisible
+   * here by design). Absent only in sessions predating event logging.
+   */
+  events: SessionEvent[]
 }
 
 // ponytail: GOAL.md requires metadata.json but leaves the schema open. This
@@ -32,6 +58,7 @@ export interface SessionMetadata {
 // actually needs more.
 export function buildMetadataJson(metadata: SessionMetadata): string {
   const { fps, resolution, cameraConfig, ...base } = metadata
+  // events stays in base: always serialized, empty array included.
   return JSON.stringify(
     {
       ...base,
