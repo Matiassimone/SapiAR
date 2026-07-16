@@ -287,8 +287,14 @@ export default function SessionDebugScreen({
   )
 }
 
-type DetailTab = 'Overview' | 'Frames' | 'GPS' | 'Metadata'
-const DETAIL_TABS: DetailTab[] = ['Overview', 'Frames', 'GPS', 'Metadata']
+type DetailTab = 'Overview' | 'Frames' | 'GPS' | 'Metadata' | 'Events'
+const DETAIL_TABS: DetailTab[] = [
+  'Overview',
+  'Frames',
+  'GPS',
+  'Metadata',
+  'Events',
+]
 
 // Fixed card heights (content height + 8 marginBottom) so both virtualized
 // lists can use getItemLayout for instant arbitrary scrolling.
@@ -380,6 +386,7 @@ function SessionDetail({
         />
       )}
       {tab === 'Metadata' && <MetadataTab summary={summary} />}
+      {tab === 'Events' && <EventsTab summary={summary} />}
       <Pressable
         style={[styles.closeButton, { paddingBottom: 16 + bottomInset }]}
         onPress={onBack}
@@ -646,6 +653,73 @@ function MetadataTab({ summary }: { summary: SessionSummary }) {
   )
 }
 
+const EVENT_ACCENT: Record<string, string | undefined> = {
+  error: '#ff453a',
+  'interruption-started': '#ff9500',
+}
+
+function EventsTab({ summary }: { summary: SessionSummary }) {
+  const events = summary.metadata?.events
+  const caveat = (
+    <Text style={styles.eventsCaveat}>
+      Only events iOS chose to surface. Silent frame-count degradation with no
+      accompanying system event is not detected here (stall detection is
+      deliberately out of scope — see the Decision Log).
+    </Text>
+  )
+  if (events == null) {
+    return (
+      <ScrollView>
+        <InfoSection title="Session events">
+          <InfoRow
+            kind="neutral"
+            label="Not recorded"
+            value="session predates event logging"
+          />
+        </InfoSection>
+        {caveat}
+      </ScrollView>
+    )
+  }
+  if (events.length === 0) {
+    return (
+      <ScrollView>
+        <InfoSection title="Session events">
+          <InfoRow
+            kind="pass"
+            label="No events recorded"
+            value="clean session"
+            valueColor="#34c759"
+          />
+        </InfoSection>
+        {caveat}
+      </ScrollView>
+    )
+  }
+  return (
+    <ScrollView>
+      {events.map((event, index) => (
+        <DataCard
+          key={`event-${index}`}
+          title={`#${index} — ${event.type}`}
+          accentColor={EVENT_ACCENT[event.type]}
+          fields={[
+            {
+              label: 'Time',
+              value: `${event.timestampMs} (+${((event.timestampMs - summary.epochMs) / 1000).toFixed(1)}s)`,
+            },
+            {
+              label: 'Detail',
+              value: event.detail === '' ? '—' : event.detail,
+            },
+          ]}
+        />
+      ))}
+      {caveat}
+    </ScrollView>
+  )
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -725,6 +799,13 @@ const styles = StyleSheet.create({
   videoBox: { flex: 1 },
   videoLabel: { color: '#ddd', fontSize: 13, marginBottom: 4 },
   video: { height: 160, backgroundColor: '#000', borderRadius: 8 },
+  eventsCaveat: {
+    color: '#777',
+    fontSize: 11,
+    lineHeight: 15,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
   rawFallback: {
     color: '#999',
     fontFamily: 'Menlo',

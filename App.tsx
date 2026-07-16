@@ -23,6 +23,7 @@ import {
   nextCandidate,
   type CameraConfigCandidate,
 } from './src/session/cameraConfigLadder'
+import type { SessionEvent } from './src/session/metadata'
 import {
   startRecordingSession,
   type ActiveRecording,
@@ -54,9 +55,27 @@ export default function App() {
   // launches — see README Pre-checkpoint-10.
   const [cameraHealth, setCameraHealth] = useState<string | null>(null)
   const [retryNonce, setRetryNonce] = useState(0)
+  // Brief auto-dismissing notice for events that fire DURING a recording —
+  // distinct from the red banner (which means "bring-up ladder exhausted").
+  const [toast, setToast] = useState<string | null>(null)
   const recordingRef = useRef<ActiveRecording | null>(null)
   const startingRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Append-only session event log (observability only — never read by
+  // recording/retry logic). recordingSession scopes it per session by
+  // timestamp at stop(); see metadata.ts SessionEvent for the Date.now()
+  // legality note.
+  const eventsRef = useRef<SessionEvent[]>([])
+
+  const recordEvent = (type: SessionEvent['type'], detail: string): void => {
+    eventsRef.current.push({ timestampMs: Date.now(), type, detail })
+    if (recordingRef.current != null) {
+      setToast(`${type}${detail === '' ? '' : `: ${detail}`}`)
+      if (toastTimerRef.current != null) clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = setTimeout(() => setToast(null), 4000)
+    }
+  }
 
   useEffect(() => {
     let session: CameraSession | undefined
@@ -172,6 +191,7 @@ export default function App() {
         healthSubs.push(
           attemptSession.addOnErrorListener((error) => {
             if (broughtUp) {
+              recordEvent('error', error.message)
               setCameraHealth(`Camera error: ${error.message} — tap to retry`)
             } else {
               failBringUp?.()
@@ -179,20 +199,26 @@ export default function App() {
           }),
           attemptSession.addOnInterruptionStartedListener((reason) => {
             if (broughtUp) {
+              recordEvent('interruption-started', reason)
               setCameraHealth(`Camera interrupted: ${reason} — tap to retry`)
             } else {
               failBringUp?.()
             }
           }),
           attemptSession.addOnInterruptionEndedListener(() => {
-            if (broughtUp) setCameraHealth(null)
+            if (broughtUp) {
+              recordEvent('interruption-ended', '')
+              setCameraHealth(null)
+            }
           }),
-          attemptSession.addOnStartedListener(() =>
-            console.log('[camera-health] session started'),
-          ),
-          attemptSession.addOnStoppedListener(() =>
-            console.log('[camera-health] session stopped'),
-          ),
+          attemptSession.addOnStartedListener(() => {
+            recordEvent('started', `rung ${candidate.step}`)
+            console.log('[camera-health] session started')
+          }),
+          attemptSession.addOnStoppedListener(() => {
+            recordEvent('stopped', '')
+            console.log('[camera-health] session stopped')
+          }),
         )
         await attemptSession.configure(connections)
         // setOutputSettings is NEVER called: under AVCaptureMultiCamSession
@@ -248,6 +274,7 @@ export default function App() {
               degraded: candidate.degraded,
               binned: candidate.binned,
             },
+            sessionEvents: () => [...eventsRef.current],
           },
         }
       } catch (error: unknown) {
@@ -344,6 +371,7 @@ export default function App() {
     return () => {
       cancelled = true
       for (const sub of healthSubs) sub.remove()
+      if (toastTimerRef.current != null) clearTimeout(toastTimerRef.current)
       if (timerRef.current != null) clearInterval(timerRef.current)
       void recordingRef.current?.stop()
       ExpoGps.stop()
@@ -442,6 +470,11 @@ export default function App() {
       {rig != null && status !== '' && (
         <Text style={styles.errorBanner}>{status}</Text>
       )}
+      {toast != null && isRecording && (
+        <View style={styles.toast}>
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      )}
       {cameraHealth != null && !isRecording && (
         <Pressable
           style={styles.healthBanner}
@@ -515,6 +548,21 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: '#e33',
+  },
+  toast: {
+    position: 'absolute',
+    bottom: 130,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(40,40,44,0.92)',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    maxWidth: '85%',
+  },
+  toastText: {
+    color: '#ffb84d',
+    fontSize: 13,
+    textAlign: 'center',
   },
   healthBanner: {
     position: 'absolute',

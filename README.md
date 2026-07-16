@@ -599,3 +599,26 @@ run:ios --device`). Do this before leaving.
   fallback config" — a reviewer can always tell whether a session's
   quality was self-selected as a compromise. Design note:
   `docs/design/2026-07-16-camera-config-ladder.md`.
+
+- **Persistent session event log + Events tab (observability only).**
+  Every iOS-surfaced camera-session event (interruption started/ended
+  with reason, runtime error, session start/stop) is now captured by the
+  ladder's existing native listeners into an append-only log,
+  timestamp-scoped to the recording at stop(), and written into
+  metadata.json as `events: [...]` — always present, where an empty
+  array explicitly means "clean session." The session folder layout
+  stays spec-exact (five files); metadata's schema was the designed
+  extension point. During an active recording, an event also shows a
+  brief auto-dismissing toast — distinct from the red banner, which
+  still specifically means "bring-up ladder exhausted." A new Events
+  tab in the debug screen renders the log chronologically (same card
+  language; red accent for errors, orange for interruptions), with
+  three legible states: events listed, "clean session," or "predates
+  event logging." This is exactly what would have made the mid-recording
+  degradation investigation immediate instead of manual CSV timestamp
+  forensics — for iOS-surfaced events. Honest ceiling, stated in the tab
+  itself: it cannot see silent frame-rate degradation with no
+  accompanying system event (deliberate stall-detection non-goal).
+  Strictly read-only from the pipeline's perspective: the log is never
+  consulted by recording, retry, or ladder logic. TDD: event
+  serialization + per-session timestamp scoping (79 tests total).

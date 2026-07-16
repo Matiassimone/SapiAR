@@ -6,7 +6,11 @@ import type { CameraVideoOutput, Recorder } from 'react-native-vision-camera'
 import { GPS_GAP_THRESHOLD_MS } from '../interpolation/gpsInterpolation'
 import { createFrameBuffer } from './frameBuffer'
 import { createLocationBuffer } from './locationBuffer'
-import { buildMetadataJson, type SessionMetadata } from './metadata'
+import {
+  buildMetadataJson,
+  type SessionEvent,
+  type SessionMetadata,
+} from './metadata'
 import { startSession } from './sessionManager'
 
 export interface RecordingDeps {
@@ -16,6 +20,12 @@ export interface RecordingDeps {
   backVideo: CameraVideoOutput
   fps: { front: number; back: number } | null
   cameraConfig: { step: number; degraded: boolean; binned: boolean } | null
+  /**
+   * Returns every session event collected since app mount; stop() scopes
+   * them to this recording by timestamp — no lifecycle coupling with the
+   * UI-owned collector (observability only, never influences recording).
+   */
+  sessionEvents: () => SessionEvent[]
 }
 
 export interface ActiveRecording {
@@ -142,6 +152,9 @@ export async function startRecordingSession(
         gps: locationBuffer.counts(),
         fps: deps.fps,
         cameraConfig: deps.cameraConfig,
+        events: deps
+          .sessionEvents()
+          .filter((event) => event.timestampMs >= epochMs),
         resolution:
           frontResolution != null && backResolution != null
             ? {

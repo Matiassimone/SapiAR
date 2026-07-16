@@ -12,6 +12,18 @@ describe('buildMetadataJson', () => {
       back: { width: 1920, height: 1440 },
     },
     cameraConfig: { step: 1, degraded: false, binned: false },
+    events: [
+      {
+        timestampMs: 1752576001000,
+        type: 'interruption-started' as const,
+        detail: 'video-device-not-available-due-to-system-pressure',
+      },
+      {
+        timestampMs: 1752576003000,
+        type: 'interruption-ended' as const,
+        detail: '',
+      },
+    ],
   }
 
   it('serializes the session summary as parseable JSON', () => {
@@ -30,6 +42,7 @@ describe('buildMetadataJson', () => {
       gps: input.gps,
       resolution: input.resolution,
       cameraConfig: input.cameraConfig,
+      events: input.events,
     })
   })
 
@@ -44,7 +57,15 @@ describe('buildMetadataJson', () => {
       gps: input.gps,
       fps: input.fps,
       cameraConfig: input.cameraConfig,
+      events: input.events,
     })
+  })
+
+  it('always serializes events — an empty array is the "clean session" signal, not an omission', () => {
+    const parsed = JSON.parse(buildMetadataJson({ ...input, events: [] })) as {
+      events: unknown
+    }
+    expect(parsed.events).toEqual([])
   })
 
   it('records a degraded ladder rung verbatim and omits cameraConfig when null', () => {
@@ -65,6 +86,7 @@ describe('buildMetadataJson', () => {
       gps: input.gps,
       fps: input.fps,
       resolution: input.resolution,
+      events: input.events,
     })
   })
 })
