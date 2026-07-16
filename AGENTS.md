@@ -84,7 +84,7 @@ csvWriter.ts         # row formatting only
 
 ## Engineering Conventions
 
-**Testing:** Jest for TypeScript (interpolation logic, CSV formatting — both are pure functions, no device needed to unit-test them). No test framework requirement for the Swift native modules given the 2-day scope, but the manual validation steps in `CLAUDE.md` → Validation Strategy are not optional — they produce the evidence for the sample output deliverable.
+**Testing:** Jest for TypeScript (interpolation logic, CSV formatting — both are pure functions, no device needed to unit-test them). No test framework requirement for the Swift native modules given the 2-day scope. `CLAUDE.md` → Validation Strategy's checks now run automated in-app (`sessionValidation.ts`) — confirm they pass on a real device recording, not just that the code compiles.
 
 **Error handling:** GPS/camera failures are expected, not exceptional. A GPS hardware error is a `quality_flag = ERROR` row, not a thrown exception that kills the session. A camera permission denial is a UI state, not a crash. Reserve actual `throw`/exceptions for truly unrecoverable states (e.g., disk write failure mid-session).
 
@@ -106,7 +106,7 @@ Ponytail rung 5 ("already-installed dependency") applies specifically to:
 - `react-native-maps` for the debug screen's track rendering — never hand-roll map tile/marker rendering.
 - Expo SDK modules (`expo-file-system`, `expo-router`, etc.) over custom native bridges, for anything that is not the timestamp-critical path.
 
-**Watch specifically for scope creep on `session-debug.tsx`.** It's an aid, not a deliverable in `GOAL.md`. If it starts accumulating features beyond "show the track, show the counts, show the gaps," that's a signal to stop and flag it rather than keep building.
+**Watch specifically for scope creep on `app/debug/`.** It's an aid, not a deliverable in `GOAL.md`. If it starts accumulating features beyond "show the track, show the counts, show the gaps," that's a signal to stop and flag it rather than keep building.
 
 **Deliberate shortcut annotation** — same convention as any Ponytail project:
 
@@ -211,4 +211,4 @@ Each session targets a single checkpoint from the Superpowers `/execute-plan` br
 7. CSV writers + `metadata.json` assembly — buffered, periodic flush.
 8. Minimal record UI — preview, record/stop button, timer. Deliberately kept late — it's explicitly not what's being evaluated. **Must set an explicit FPS constraint on both camera outputs** (checkpoint 3 found the back camera negotiates a default 24fps with no constraint set, vs. front's 60fps — GOAL.md calls for highest available quality, and an explicit constraint also restores a real expected-frame-count baseline instead of measuring fps empirically after the fact).
 9. `session-debug.tsx` — map with real/interpolated points, counts, gap list. Built once real data exists to visualize; doubles as ongoing dev tool from this point forward.
-10. Real recording (30s+ outdoor walk) → validate frame count, GPS continuity, eyeball via debug screen → produce sample output folder. Focus on real motion (the open speed/course item) and enough duration for a natural GPS gap to show INTERP on a moving track. The ERROR sentinel already has real-hardware proof (`docs/sample-output-error-path/`, pre-checkpoint-10 log entry) — an airplane-mode toggle during the walk is optional extra evidence, not a blocking requirement.
+10. Real recording (30s+ outdoor walk) → validate frame count, GPS continuity, eyeball via debug screen → produce sample output folder. Focus on real motion (the open speed/course item) and enough duration for a natural GPS gap to show INTERP on a moving track. The ERROR sentinel already has real-hardware proof (quoted in full in README's Pre-checkpoint-10 log entry) — an airplane-mode toggle during the walk is optional extra evidence, not a blocking requirement.

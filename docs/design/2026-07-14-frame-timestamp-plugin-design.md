@@ -1,7 +1,7 @@
 # Frame Timestamp Plugin — Design (Checkpoint 3)
 
 Date: 2026-07-14
-Status: approved for implementation (autonomous session — mandated by AGENTS.md Superpowers Integration)
+Status: implemented (checkpoint 3)
 
 ## Problem
 

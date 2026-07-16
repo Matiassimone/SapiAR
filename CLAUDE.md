@@ -179,11 +179,14 @@ SapiAR/
 │   │   ├── sessionManager.ts     # generates {epochMs}, owns session folder lifecycle
 │   │   ├── frameBuffer.ts        # in-memory buffer + periodic flush -> FrameData.csv
 │   │   ├── locationBuffer.ts     # in-memory buffer + periodic flush -> LocationData.csv
-│   │   └── metadata.ts           # metadata.json assembly
+│   │   ├── metadata.ts           # metadata.json assembly
+│   │   ├── cameraConfigLadder.ts # pure fallback-ladder logic for bring-up failures
+│   │   └── sessionValidation.ts  # in-app frame-count/GPS-continuity/sentinel checks
 │   ├── interpolation/
 │   │   └── gpsInterpolation.ts   # gap detection + linear interpolation, pure functions
 │   └── csv/
-│       └── csvWriter.ts          # shared CSV row formatting (both files)
+│       ├── csvWriter.ts          # shared CSV row formatting (both files)
+│       └── csvReader.ts          # parsing for the debug screen's viewers
 ├── docs/
 │   ├── design/                    # per-checkpoint /brainstorming design docs
 │   └── sample-output/            # real 30s+ recording, CSVs + metadata.json (no video)
@@ -221,11 +224,14 @@ listeners, no lifecycle dependency), split out once a second screen
 
 ## Validation Strategy
 
-Given more time, this would be `XCTest` + `jest`. For the scope of this exercise:
+Frame count, GPS continuity, and sentinel-row integrity run as automated,
+TDD'd checks in-app (`sessionValidation.ts`, checkpoint 9 extension) —
+not a manual process anymore. The debug screen's Validate panel shows
+pass/fail against real session data directly on-device.
 
-- **Frame count check:** expected frames (`fps × duration × 2 cameras`) vs. actual `FrameData.csv` row count, run against a real recording — not simulated.
-- **GPS continuity check:** no timestamp gap in `LocationData.csv` exceeds the interpolation threshold, across a real 30s+ walk.
-- **Sentinel row check:** manually force a GPS error path (airplane mode toggle mid-recording) and confirm the `ERROR` row is written correctly, not silently dropped.
-- **Visual check:** the `session-debug.tsx` map view is the fastest way to eyeball whether interpolated points land sensibly between real ones — use it during development, not just at the end.
+- **Frame count check:** expected frames (`fps × duration × 2 cameras`, from `metadata.json`) vs. actual `FrameData.csv` row count, per camera, with a measured `max(5, 1%)` tolerance for recorder start/stop boundary slop.
+- **GPS continuity check:** no timestamp gap in `LocationData.csv` exceeds the interpolation threshold. Runs against the actual written file, not assumed from the interpolation algorithm alone.
+- **Sentinel row check:** every `ERROR` row has all numeric fields exactly `-1`, including the timestamp. Reports "not exercised" rather than a false pass when a session has zero error rows.
+- **Visual check:** the debug screen's map view is still eyeballed manually — the fastest way to see whether interpolated points land sensibly between real ones. This one stays visual by nature, not a candidate for automation.
 
 Document actual results (not just intent) in the README.

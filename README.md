@@ -4,45 +4,48 @@ Dual-camera + GPS data collection prototype, technical exercise for Sapios.
 
 ## Final Write-up
 
-Both CSVs share a Unix-ms epoch, but the two capture paths reach it
-differently. Frame timestamps come from
-`CMSampleBuffer.presentationTimeStamp`, which lives on the host clock
-(time since boot), not wall-clock time. A single anchor, computed once
-per session by reading `CLOCK_REALTIME` and the host clock back-to-back,
-offsets the whole frame series onto Unix time. Frame-to-frame deltas come
-entirely from hardware. The anchor only positions the series, so this
-isn't the forbidden per-frame `Date()` pattern. GPS needs no anchor.
-`CLLocation.timestamp` is already wall-clock, so
-`timeIntervalSince1970 × 1000` is the hardware timestamp directly. Two
-different mechanisms reach the same axis, both traceable to hardware
-rather than an app-side clock read.
+Testing was done on a real iPhone 12 Pro (2020), not a simulator, since
+multi-cam capture and GPS motion need actual hardware. 30fps recorded
+cleanly start to finish on every device test. 60fps sometimes lost
+frame timestamps partway through a recording under sustained load,
+though video and GPS kept working fine. The deliverable records at
+30fps on purpose, not by default.
 
-vision-camera v5's Frame Processor Plugin path requires a synchronous JS
-worklet per frame. This isn't a timestamp-accuracy risk.
-A custom native camera output avoids JS in the
-per-frame path entirely. Native modules deliberately emit only raw values,
-with CoreLocation's own `-1` encoding intact. All classification (the 20m
-accuracy threshold, `ERROR` sentinels, `INTERP` flags) lives in pure
-TypeScript, testable without a device. Interpolation only fills real gaps
-between two real fixes. There's no extrapolation past session edges, and
-synthetic rows never fabricate speed or course, since a bounding fix is
-often stationary itself.
+### How the two data streams stay in sync
 
-The biggest open item, found during outdoor testing, is that sustained
-60fps multi-cam recording intermittently loses frame-timestamp delivery
-mid-session while video and GPS stay healthy. This is a resource-pressure
-behavior distinct from the bring-up failures a config-fallback ladder
-already handles. Root-causing it needs live thermal and pressure
-instrumentation across multiple long recordings, which wasn't safe to
-build hours before the deadline. 30fps proved stable in every test and
-was chosen deliberately over that risk. Given more time, three things
-would come next. Expose `AVCaptureMultiCamSession.hardwareCost` to JS,
-which is missing from vision-camera entirely and could be a real
-upstream contribution. Add continuous mid-session frame-delivery
-monitoring instead of only a bring-up watchdog. Add an integration test
-spanning session-start-to-first-flush, the exact seam where two
-well-unit-tested modules (folder creation, file-append) left a gap
-neither module's tests alone could see.
+Both CSVs share a Unix millisecond clock, but each one gets there
+differently. Camera frames carry a timestamp measured against time since
+the phone booted, not the real world clock. To fix that, the app reads
+the real world clock and the boot clock once, back to back, at session
+start. The gap between them becomes a fixed offset, added to every frame
+timestamp. Frame to frame timing still comes from the hardware, since
+the offset only repositions the series. GPS needs none of this. Its
+timestamp is already a real world clock reading from the location
+hardware.
+
+### Tradeoffs
+
+vision-camera's default per frame timestamp path runs a JavaScript
+function on every frame. Not a precision problem, since the value is
+identical, but it risks dropped frames under load and needs two extra
+dependencies. This app reads timestamps in native Swift code, with no
+JavaScript per frame. Native code never decides if a GPS point is
+accurate or needs interpolating. That logic lives in TypeScript,
+testable without a phone. Interpolation fills only real gaps between two
+GPS points, never past a recording's edges, and never with an invented
+speed or heading.
+
+### Given more time
+
+- Test more resolution and frame rate combinations to get 60fps reliable
+  on this phone, alongside exposing Apple's hardwareCost API to
+  JavaScript, missing from the camera library.
+- Support Android. The orchestration layer abstracts the phone, so this
+  means an Android camera module plus finishing the GPS module's Android
+  stub, not a rewrite.
+- Stream video and its timestamped GPS data to cloud storage as they're
+  recorded, using the same native to app handoff, into one combined
+  dataset instead of local files.
 
 ---
 
@@ -134,8 +137,12 @@ instead.
 - A single record and stop button, plus a Sessions entry for reviewing
   past recordings (CSVs, GPS map, validation checks) directly on the
   device.
-- A sample recorded session is already included at `docs/sample-output/`
-  for reference without needing to record anything new.
+- Two sample recorded sessions are already included at
+  `docs/sample-output/` for reference without needing to record anything
+  new — `1784233996822_Session/` (the featured example: 30fps, real
+  motion data, includes a config-ladder fallback to a binned resolution
+  and its diagnostics) and `1784205721552_Session/` (the original clean
+  30fps walk).
 
 Prerequisites below covers the specific errors this setup hit during
 development (CocoaPods version, npm version, device trust) and their
