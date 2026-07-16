@@ -147,9 +147,31 @@ Before marking any task complete, do a pass specifically to delete comments that
 
 ```
 SapiAR/
-├── app/                          # Expo Router screens (RN/TS)
-│   ├── index.tsx                 # record/stop button, dual preview, timer — the evaluated "minimal UI"
-│   └── session-debug.tsx         # post-recording debug screen — map + counts + gap list, explicitly secondary
+├── App.tsx                       # composition root — hooks + record/debug switch, 77 lines
+├── app/
+│   ├── components/                # screen-agnostic, reusable presentational kit
+│   │   ├── Glyph/                 # Glyph.tsx, Glyph.styles.ts, index.ts
+│   │   ├── InfoRow/                # InfoRow.tsx, InfoRow.styles.ts, index.ts
+│   │   ├── InfoSection/            # InfoSection.tsx, InfoSection.styles.ts, index.ts
+│   │   └── DataCard/               # DataCard.tsx, DataCard.styles.ts, index.ts
+│   ├── record/                    # the evaluated "minimal UI" (GOAL.md §7)
+│   │   ├── camera.constants.ts    # DEFAULT_FPS
+│   │   ├── recordScreen.styles.ts
+│   │   ├── useSessionEvents.ts    # event log + toast + recordEvent
+│   │   ├── useCameraPipeline.ts   # bring-up, config ladder, listeners, health, teardown
+│   │   ├── useRecording.ts        # record/stop toggle + timer
+│   │   └── RecordScreen.tsx       # presentational only
+│   └── debug/                     # post-recording viewer, explicitly secondary
+│       ├── sessionDebug.constants.ts
+│       ├── sessionDebug.styles.ts
+│       ├── useSessionBrowser.ts   # list/open/parse/delete a session
+│       ├── SessionDebugScreen.tsx # session list + swipe-to-delete
+│       ├── DebugSettingsSheet.tsx # FPS picker modal
+│       ├── SessionDetail.tsx      # tab switcher + virtualized row lists
+│       ├── OverviewTab.tsx
+│       ├── ValidationCard.tsx
+│       ├── MetadataTab.tsx
+│       └── EventsTab.tsx
 ├── modules/
 │   ├── frame-timestamp-plugin/   # custom NativeCameraOutput (Swift) — see CLAUDE.md Architecture
 │   │   └── ios/
@@ -175,6 +197,15 @@ SapiAR/
 └── GOAL.md                       # Original Hiring Task
 ```
 
+`app/record/` and `app/debug/` were split out of two originally monolithic
+files (`App.tsx` at 606 lines, `session-debug.tsx` + its UI kit at 823
+lines) once the pipeline was feature-complete — extraction only, verbatim
+logic, per Architecture Rule #7's "no god files" now applied to screens,
+not just session/CSV modules. `app/components/` holds what turned out to
+be genuinely screen-agnostic presentational pieces (no hooks, no native
+listeners, no lifecycle dependency), split out once a second screen
+(`app/debug/`) started reusing them.
+
 ---
 
 ## Architecture Rules — Always Follow
@@ -185,7 +216,7 @@ SapiAR/
 4. **`epochMs` is generated once per session**, at record-start, in `sessionManager.ts`, and passed down — never re-derived per file.
 5. **CSV writers never write a row without every required column populated** — missing data is `-1`, not an empty cell.
 6. **Minimum complexity.** If Expo/vision-camera already solves it, do not reimplement it natively "for control." Native code is reserved for what the spec actually requires to be native (timestamps).
-7. **`session-debug.tsx` never becomes the primary flow.** It reads already-written session data (CSVs/session object) for display; it never mutates or re-derives pipeline data — no rewriting rows, no recalculating classifications, no reimplementing gap detection. **Exception: deleting an entire session folder is allowed** (housekeeping, not data mutation — it doesn't touch pipeline logic or influence the recording flow) as long as it's a whole-folder delete with confirmation, never a partial edit. If it starts influencing the recording flow, that's scope creep — stop and flag it.
+7. **The debug screen (`app/debug/`) never becomes the primary flow.** It reads already-written session data (CSVs/session object) for display; it never mutates or re-derives pipeline data. No rewriting rows, no recalculating classifications, no reimplementing gap detection. **Exception: deleting an entire session folder is allowed** (housekeeping, not data mutation, doesn't touch pipeline logic or influence the recording flow) as long as it's a whole-folder delete with confirmation, never a partial edit. This applies to every file under `app/debug/`, not just the top-level screen component. If it starts influencing the recording flow, that's scope creep, stop and flag it.
 8. **No special-case handling for session folder collisions or partial/failed sessions.** `GOAL.md` §7 defines only a record/stop button — there is no "cancel" concept, so a partial-session cleanup path isn't a real requirement. A folder-name collision (same `epochMs` twice) requires two sessions starting in the same millisecond via human button-press, which isn't realistic — let it throw rather than adding retry/regeneration logic.
 9. **No interpolation before the first real GPS fix or after the last one.** `GOAL.md`'s "never leave a gap" applies to gaps _between_ real fixes, not to extrapolating before/after the observed range — linear interpolation needs two real bounds, and fabricating position without one would be the same category of error as inventing speed/course on synthetic rows (Architecture Rule area, checkpoint 6). A few real-world seconds of no GPS data at recording start/stop is expected hardware behavior, not a spec violation.
 10. **`gpsInterpolation.ts` must return real entries by the same object reference, never a clone.** `locationBuffer.ts`'s flush carry-over (last real fix of flush N re-entering flush N+1 as interpolation context) deduplicates by reference identity (`e !== carriedFix`) to avoid writing that row twice. If interpolation ever starts copying entries, this silently breaks and produces duplicate CSV rows. Both sides are pinned by tests (checkpoint 6's `toBe` reference check, checkpoint 7's duplicate-row regression test) — if you touch either module, re-run both test files, not just the one you edited.

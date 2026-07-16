@@ -2,6 +2,13 @@
 
 Dual-camera + GPS data collection prototype, technical exercise for Sapios.
 
+## Status
+
+Final write-up drafted below (380 words), sourced from the real Technical
+Decision Log entries, not written from scratch. Still pending are
+checkpoint 10's sample output extraction to `docs/sample-output/` and a
+final read-through before submission.
+
 ---
 
 ## TL;DR (Bitácora Highlights)
@@ -127,6 +134,58 @@ lives in pure TypeScript. This split is why the pipeline stayed testable
 without a device for most of the project, and why the three real
 device-only bugs (checkpoint 8) were all inside the Native Capture layer,
 not the Assembly layer.
+
+---
+
+## Getting Started
+
+These are the exact steps that produced a working build from a clean
+clone, verified today.
+
+### Requirements
+
+- Xcode, current stable version.
+- A physical iPhone that supports Multi-Cam capture (iPhone XS or newer).
+  The simulator cannot open more than one camera at once, so live
+  preview and recording only work on a real device. Everything else
+  (browsing a previously recorded session in the debug tooling, for
+  example) works fine on simulator.
+- Node and npm. `npm --version` should be 11.10.0 or higher for
+  `.npmrc`'s security settings to take effect (see Prerequisites below if
+  updating npm fails).
+
+### Steps
+
+```bash
+git clone <repo-url>
+cd SapiAR
+npm ci
+npx expo prebuild --clean
+npx expo run:ios --device
+```
+
+Select your connected iPhone when prompted. First launch needs Xcode's
+developer profile trusted on the device (Prerequisites below covers this
+if the app installs but won't open).
+
+For a build that doesn't need Metro running nearby, useful for testing
+away from a computer, add `--configuration Release` to the last command
+instead.
+
+### What to expect
+
+- Camera and location permission prompts on first launch.
+- A live dual camera preview once permissions are granted, on a real
+  device.
+- A single record and stop button, plus a Sessions entry for reviewing
+  past recordings (CSVs, GPS map, validation checks) directly on the
+  device.
+- A sample recorded session is already included at `docs/sample-output/`
+  for reference without needing to record anything new.
+
+Prerequisites below covers the specific errors this setup hit during
+development (CocoaPods version, npm version, device trust) and their
+fixes, in case any of them show up on a different machine.
 
 ---
 
