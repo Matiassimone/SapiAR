@@ -3,6 +3,8 @@ import { StatusBar } from 'expo-status-bar'
 import { createFrameTimestampController } from 'frame-timestamp-plugin'
 import { useEffect, useRef, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import {
   CommonResolutions,
   NativePreviewView,
@@ -13,6 +15,7 @@ import {
   type CameraVideoOutput,
 } from 'react-native-vision-camera'
 
+import SessionDebugScreen from './app/session-debug'
 import {
   startRecordingSession,
   type ActiveRecording,
@@ -24,17 +27,21 @@ interface CameraRig {
   recordingDeps: RecordingDeps
 }
 
-// ponytail: fps fixed at 30 for both cameras — iPhone 12 Pro multi-cam
-// formats cap there in practice, and a uniform rate keeps the frame-count
-// validation arithmetic (fps × duration × 2) uniform. Revisit per-device
-// if Sapios targets hardware with higher multi-cam ceilings.
-const TARGET_FPS = 30
+// ponytail: 30fps default — iPhone 12 Pro multi-cam formats cap there in
+// practice, and a uniform rate keeps the frame-count validation arithmetic
+// (fps × duration × 2) uniform. Overridable from the debug settings (24/30/
+// 60) for experimentation; whatever actually negotiates lands in
+// metadata.json, which is what the Validate check reads.
+const DEFAULT_FPS = 30
 
 export default function App() {
   const [rig, setRig] = useState<CameraRig | null>(null)
   const [status, setStatus] = useState('Starting cameras…')
   const [elapsedS, setElapsedS] = useState<number | null>(null)
+  const [showDebug, setShowDebug] = useState(false)
+  const [targetFps, setTargetFps] = useState(DEFAULT_FPS)
   const recordingRef = useRef<ActiveRecording | null>(null)
+  const startingRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
@@ -119,7 +126,7 @@ export default function App() {
             { output: frontVideo, mirrorMode: 'auto' },
           ],
           constraints: [
-            { fps: TARGET_FPS },
+            { fps: targetFps },
             { resolutionBias: frontVideo },
             { binned: false },
           ],
@@ -135,7 +142,7 @@ export default function App() {
             { output: backVideo, mirrorMode: 'auto' },
           ],
           constraints: [
-            { fps: TARGET_FPS },
+            { fps: targetFps },
             { resolutionBias: backVideo },
             { binned: false },
           ],
@@ -194,12 +201,26 @@ export default function App() {
       ExpoGps.stop()
       void session?.stop()
     }
-  }, [])
+    // Re-running on fps change tears the camera session down and negotiates
+    // fresh — only reachable between recordings (the debug screen that hosts
+    // the setting is hidden while recording), never a live renegotiation.
+  }, [targetFps])
 
   const toggleRecording = async (): Promise<void> => {
     if (rig == null) return
     if (recordingRef.current == null) {
-      const recording = await startRecordingSession(rig.recordingDeps)
+      // Claimed synchronously BEFORE the await: a second tap while the
+      // session is still starting must not launch a concurrent session over
+      // the same native buffers (double-tap race found in the checkpoint 9
+      // duplicate-keys investigation).
+      if (startingRef.current) return
+      startingRef.current = true
+      let recording: ActiveRecording
+      try {
+        recording = await startRecordingSession(rig.recordingDeps)
+      } finally {
+        startingRef.current = false
+      }
       recordingRef.current = recording
       setElapsedS(0)
       timerRef.current = setInterval(() => {
@@ -216,6 +237,19 @@ export default function App() {
   }
 
   const isRecording = elapsedS != null
+  if (showDebug) {
+    return (
+      <GestureHandlerRootView style={styles.container}>
+        <SafeAreaProvider>
+          <SessionDebugScreen
+            onClose={() => setShowDebug(false)}
+            targetFps={targetFps}
+            onChangeTargetFps={setTargetFps}
+          />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    )
+  }
   return (
     <View style={styles.container}>
       {rig != null ? (
@@ -253,6 +287,11 @@ export default function App() {
       )}
       {rig != null && status !== '' && (
         <Text style={styles.errorBanner}>{status}</Text>
+      )}
+      {!isRecording && (
+        <Pressable style={styles.debugEntry} onPress={() => setShowDebug(true)}>
+          <Text style={styles.debugEntryText}>Sessions</Text>
+        </Pressable>
       )}
       <StatusBar style="light" />
     </View>
@@ -311,6 +350,15 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: '#e33',
+  },
+  debugEntry: {
+    position: 'absolute',
+    top: 60,
+    right: 16,
+  },
+  debugEntryText: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 13,
   },
   stopIcon: {
     width: 28,

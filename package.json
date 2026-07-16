@@ -10,11 +10,15 @@
     "expo-file-system": "57.0.0",
     "expo-gps": "file:modules/expo-gps",
     "expo-status-bar": "57.0.0",
+    "expo-video": "57.0.0",
     "frame-timestamp-plugin": "file:modules/frame-timestamp-plugin",
     "react": "19.2.3",
     "react-native": "0.86.0",
+    "react-native-gesture-handler": "2.32.0",
+    "react-native-maps": "1.29.0",
     "react-native-nitro-image": "0.15.1",
     "react-native-nitro-modules": "0.36.1",
+    "react-native-safe-area-context": "5.7.0",
     "react-native-vision-camera": "5.1.0"
   },
   "devDependencies": {
@@ -45,6 +49,7 @@
   "private": true,
   "packageManager": "npm@11.10.0",
   "allowScripts": {
-    "unrs-resolver@1.12.2": true
+    "unrs-resolver@1.12.2": true,
+    "fsevents": false
   }
 }
