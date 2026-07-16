@@ -19,8 +19,8 @@ export interface LocationBuffer {
 
 /**
  * Accumulates raw GPS samples and, per flush, runs the assembly pipeline in
- * the only correct order: pre-session filter FIRST, then gap interpolation,
- * then row formatting — a cached pre-session fix that reached the
+ * the only correct order. Pre-session filter FIRST, then gap interpolation,
+ * then row formatting. A cached pre-session fix that reached the
  * interpolator would become a false anchor and fabricate synthetic points
  * (checkpoint 4's 80.2s-span finding).
  *

@@ -1,20 +1,132 @@
 # SapiAR
 
-Dual-camera + GPS data collection prototype — technical exercise for Sapios.
+Dual-camera + GPS data collection prototype, technical exercise for Sapios.
 
-## Status
+---
 
-Work in progress. This README is maintained as a running technical log
-during development; the final 200-400 word synchronization write-up
-(GOAL.md deliverable) will be distilled from the entries below once the
-pipeline is complete — not written from scratch at the end.
+## TL;DR (Bitácora Highlights)
+
+Six findings worth reading first, each pointing at its full entry below.
+
+1. Frame timestamps use vision-camera v5's `NativeCameraOutput` extension
+   point instead of the JS-worklet Frame Processor Plugin path, avoiding
+   the exact per-frame JS hop the project's core principle forbids
+   (checkpoint 3).
+2. Two independent capture paths converge on the same Unix-ms axis
+   through different, documented routes. Frames anchor a host-clock
+   series once per session. GPS reads a wall-clock timestamp directly.
+   This is the real synchronization design (checkpoints 3-4).
+3. Native modules emit raw hardware values only. Every classification
+   (`OK`, `LOW_ACCURACY`, `ERROR`, `INTERP`) lives in pure, unit-tested
+   TypeScript, testable without a device (checkpoints 4, 6-7).
+4. Three device-only bugs were found and root-caused in vision-camera v5
+   itself. A crashing preview-buffer optimization, a broken
+   `setOutputSettings` under multi-cam, and missing resolution-negotiation
+   intent that silently capped quality 9x. None of these reproduced on
+   simulator (checkpoint 8).
+5. Real outdoor testing found a sustained-load resilience issue. 60fps
+   intermittently loses frame-timestamp delivery mid-recording under
+   multi-cam pressure while video and GPS stay healthy. 30fps proved
+   stable across every test, so the deliverable uses 30fps on purpose,
+   not by default (checkpoint 10).
+6. Two resilience layers shipped the same day instead of one unverified
+   guess. A degrading config ladder handles bring-up failures. A
+   persistent Events log handles observability. Both state their limits
+   honestly instead of hiding behind a green checkmark.
 
 ---
 
 ## Final Write-up (Synchronization, Tradeoffs, Improvements)
 
-_[To be written at checkpoint 11, distilled from the Technical Decision Log
-below. Placeholder — do not leave this section empty in the final commit.]_
+Both CSVs share a Unix-ms epoch, but the two capture paths reach it
+differently. Frame timestamps come from
+`CMSampleBuffer.presentationTimeStamp`, which lives on the host clock
+(time since boot), not wall-clock time. A single anchor, computed once
+per session by reading `CLOCK_REALTIME` and the host clock back-to-back,
+offsets the whole frame series onto Unix time. Frame-to-frame deltas come
+entirely from hardware. The anchor only positions the series, so this
+isn't the forbidden per-frame `Date()` pattern. GPS needs no anchor.
+`CLLocation.timestamp` is already wall-clock, so
+`timeIntervalSince1970 × 1000` is the hardware timestamp directly. Two
+different mechanisms reach the same axis, both traceable to hardware
+rather than an app-side clock read.
+
+vision-camera v5's Frame Processor Plugin path requires a synchronous JS
+worklet per frame. This isn't a timestamp-accuracy risk, but a
+completeness one (frame-drop pressure under backpressure) and an
+extra-dependency one. A custom native camera output avoids JS in the
+per-frame path entirely. Native modules deliberately emit only raw values,
+with CoreLocation's own `-1` encoding intact. All classification (the 20m
+accuracy threshold, `ERROR` sentinels, `INTERP` flags) lives in pure
+TypeScript, testable without a device. Interpolation only fills real gaps
+between two real fixes. There's no extrapolation past session edges, and
+synthetic rows never fabricate speed or course, since a bounding fix is
+often stationary itself. Three real device bugs were each root-caused
+only by testing on real hardware, never the simulator. A crashing
+preview-buffer optimization. A broken `setOutputSettings` under
+multi-cam. Missing resolution-negotiation intent that silently capped
+quality at 640x480.
+
+The biggest open item, found during outdoor testing, is that sustained
+60fps multi-cam recording intermittently loses frame-timestamp delivery
+mid-session while video and GPS stay healthy. This is a resource-pressure
+behavior distinct from the bring-up failures a config-fallback ladder
+already handles. Root-causing it needs live thermal and pressure
+instrumentation across multiple long recordings, which wasn't safe to
+build hours before the deadline. 30fps proved stable in every test and
+was chosen deliberately over that risk. Given more time, three things
+would come next. Expose `AVCaptureMultiCamSession.hardwareCost` to JS,
+which is missing from vision-camera entirely and could be a real
+upstream contribution. Add continuous mid-session frame-delivery
+monitoring instead of only a bring-up watchdog. Add an integration test
+spanning session-start-to-first-flush, the exact seam where two
+well-unit-tested modules (folder creation, file-append) left a gap
+neither module's tests alone could see.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph Native["Native Capture (Swift) — zero JS per frame or update"]
+        FTC["FrameTimestampController<br/>NativeCameraOutput, front + back"]
+        GPSMOD["ExpoGps Module<br/>CLLocationManager"]
+    end
+
+    subgraph Orchestration["Orchestration (TypeScript)"]
+        SM["sessionManager.ts<br/>generates epochMs + file paths, once"]
+        RS["recordingSession.ts<br/>drains all 3 native buffers every 1s"]
+    end
+
+    subgraph Assembly["Data Assembly (TypeScript, pure functions)"]
+        GI["gpsInterpolation.ts<br/>fills real gaps only, no extrapolation"]
+        CW["csvWriter.ts<br/>classifies OK / LOW_ACCURACY / ERROR / INTERP"]
+    end
+
+    subgraph Storage["Session Folder (disk)"]
+        FILES["epochMs_FrontVideo.mov<br/>epochMs_BackVideo.mov<br/>epochMs_FrameData.csv<br/>epochMs_LocationData.csv<br/>metadata.json"]
+    end
+
+    subgraph Viewer["Debug Viewer (read-only)"]
+        SD["session-debug.tsx<br/>csvReader + sessionValidation + map"]
+    end
+
+    FTC -->|drain| RS
+    GPSMOD -->|drain| RS
+    SM -->|paths and epochMs| RS
+    RS --> GI --> CW --> FILES
+    FILES -.->|read only, never written| SD
+```
+
+The boundary that matters most: anything touching a hardware timestamp
+lives in the Native Capture layer, on the capture thread, with zero JS
+involvement before the value exists in memory. Everything downstream of
+an already-captured value (interpolation, classification, formatting)
+lives in pure TypeScript. This split is why the pipeline stayed testable
+without a device for most of the project, and why the three real
+device-only bugs (checkpoint 8) were all inside the Native Capture layer,
+not the Assembly layer.
 
 ---
 
@@ -507,6 +619,53 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
   binning), so the value comes from the already-held video outputs in
   `RecordingDeps` — still no new capture path. Omitted (like `fps`) when
   never reported. TDD: 3 new/updated tests, 71 total.
+
+### Checkpoint 10 — sustained-load frame stall, distinct from bring-up
+
+Real outdoor testing surfaced a second camera-resilience issue — not the
+bring-up `hardwareCost` overage the config ladder (below) handles, but
+degradation **mid-recording**, under sustained load. Four consecutive
+recordings, same app session, no restart between them:
+
+| Test | Config                          | Gap from prior | Clean frames                                | Outcome                                               |
+| ---- | ------------------------------- | -------------- | ------------------------------------------- | ----------------------------------------------------- |
+| 1    | 60fps, long walk                | fresh launch   | 222.4s @ 60fps, both cams, near-zero jitter | 0 frames for the remaining 168.5s of a 390.9s session |
+| 2    | 60fps, airplane toggle mid-walk | +17s           | 0                                           | never delivered a single frame, entire 136.8s session |
+| 3    | 60fps, airplane full-session    | +9.9s          | 28.1s @ 60fps, both cams                    | 0 frames for the remaining 168.5s of a 196.6s session |
+| 4    | 30fps, short walk               | +53.3s         | 154.8s @ 30fps, full session                | clean throughout — chosen as the sample output        |
+
+Video (`.mov`, both cameras — confirmed by playback duration matching
+session duration) and GPS (1Hz uninterrupted through tests 1–3, unaffected
+by the frame-capture silence) were healthy in every test. Only
+`FrameTimestampController`'s delivery degraded — evidence iOS is
+selectively deprioritizing what it can treat as a non-essential stream
+under sustained multi-cam 60fps load, not tearing down the session.
+
+A striking, unverified coincidence: tests 1 and 3 died with **168.45s**
+and **168.46s** remaining in their respective sessions — 13ms apart,
+despite wildly different elapsed clean-capture time before the cutoff
+(222.4s vs 28.1s). Consistent with a shared, session-duration-independent
+cutoff rather than pure cumulative heat buildup — but two data points
+can't confirm a mechanism. Flagged as observation, not conclusion.
+
+Root-causing this precisely would need live
+`AVCaptureDevice.systemPressureState`/`ProcessInfo.thermalState`
+instrumentation across several real multi-minute recordings — out of
+scope today, same reasoning as the `hardwareCost` preflight deferral
+below. **Decision:** 30fps is the practical "highest available quality"
+for this multi-cam topology — `GOAL.md`'s own wording supports this once
+"available" is read as _sustainable for a real session_, not just the
+largest number a spec sheet allows. Test 4 (30fps) is the deliverable
+sample output; the three 60fps walks are retained as evidence for this
+finding, not discarded.
+
+Chose observability over an unverified fix: the Events tab (below) ships
+instead of active mid-session stall detection, which would need
+continuous frame-count polling logic built and tested same-day under
+deadline pressure. The tab's own empty/caveat state says explicitly that
+it can't catch this specific failure mode (no accompanying iOS-level
+event fires when it happens) — the gap is documented, not hidden behind
+a green checkmark.
 
 - **Intermittent black preview on unplugged cold launch — investigated,
   NOT root-caused.** Time-boxed investigation, honest outcome: the device

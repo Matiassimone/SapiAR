@@ -2,11 +2,11 @@ import type { ReactNode } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 
 /**
- * Shared visual language for the debug screens: grouped sections, icon +
+ * Shared visual language for the debug screens. Grouped sections, icon +
  * label + value rows, and card-per-datum lists. Unicode glyphs stand in for
- * an icon set on purpose — no icon library exists in this project and one
- * isn't worth adding for internal tooling (Ponytail rung 5 check came up
- * empty).
+ * an icon set. No icon library exists in this project and one
+ * isn't worth adding for internal tooling. The Ponytail rung 5 check came
+ * up empty.
  */
 
 export type GlyphKind = 'pass' | 'fail' | 'neutral' | 'info'

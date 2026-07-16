@@ -4,7 +4,7 @@ interface ResolutionTarget {
 }
 
 export interface CameraConfigCandidate {
-  /** 1-based rung number — exported to metadata.json for transparency. */
+  /** 1-based rung number, exported to metadata.json for transparency. */
   step: number
   degraded: boolean
   targetResolution: ResolutionTarget
@@ -14,11 +14,11 @@ export interface CameraConfigCandidate {
 
 /**
  * Ordered degradation ladder for AVCaptureMultiCamSession bring-up
- * failures (hardwareCost over budget, error -11872): ideal config first,
- * then Apple's documented mitigations — binned at the same target, then
+ * failures (hardwareCost over budget, error -11872). Ideal config first,
+ * then Apple's documented mitigations, binned at the same target, then
  * one tier down still binned. The user-selected fps is preserved on every
- * rung: the ladder degrades resolution/binning, never the explicit rate
- * choice. Tiers are symbolic negotiation targets (see the design note) —
+ * rung. The ladder degrades resolution and binning, never the explicit rate
+ * choice. Tiers are symbolic negotiation targets (see the design note),
  * device-agnostic because targetResolution asks for "this class or the
  * nearest supported," never a literal device format.
  */

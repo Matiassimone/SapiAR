@@ -61,7 +61,7 @@ describe('buildMetadataJson', () => {
     })
   })
 
-  it('always serializes events — an empty array is the "clean session" signal, not an omission', () => {
+  it('always serializes events, an empty array is the "clean session" signal rather than an omission', () => {
     const parsed = JSON.parse(buildMetadataJson({ ...input, events: [] })) as {
       events: unknown
     }

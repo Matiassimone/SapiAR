@@ -21,8 +21,8 @@ export interface RecordingDeps {
   fps: { front: number; back: number } | null
   cameraConfig: { step: number; degraded: boolean; binned: boolean } | null
   /**
-   * Returns every session event collected since app mount; stop() scopes
-   * them to this recording by timestamp — no lifecycle coupling with the
+   * Returns every session event collected since app mount. stop() scopes
+   * them to this recording by timestamp, with no lifecycle coupling to the
    * UI-owned collector (observability only, never influences recording).
    */
   sessionEvents: () => SessionEvent[]
@@ -59,9 +59,9 @@ function recordUntilStopped(recorder: Recorder): {
 }
 
 /**
- * Owns everything session-scoped: folder + paths, the two recorders, GPS
+ * Owns everything session-scoped. Folder and paths, the two recorders, GPS
  * start/stop, the drain/flush cadence, and metadata. The UI hands over the
- * mount-time camera objects and gets back a start/stop surface — no
+ * mount-time camera objects and gets back a start/stop surface. No
  * precision logic ever lives in the UI layer (CLAUDE.md Architecture).
  */
 export async function startRecordingSession(
@@ -71,12 +71,12 @@ export async function startRecordingSession(
   const { epochMs, paths } = session
 
   // FileHandle's Append mode opens-but-never-creates (found on device, first
-  // real recording) — the empty CSVs must exist before the first flush.
-  // Created here, not in sessionManager: readying the pipeline to record is
+  // real recording). The empty CSVs must exist before the first flush.
+  // Created here rather than in sessionManager because readying the pipeline to record is
   // orchestration, and sessionManager stays paths-and-folder only
-  // (checkpoint 5 boundary). Truly empty — headers remain buffer-owned,
+  // (checkpoint 5 boundary). Truly empty, headers remain buffer-owned,
   // written on first flush (checkpoint 7). The .mov files need no
-  // counterpart: the Recorder creates its own output file.
+  // counterpart, the Recorder creates its own output file.
   new File(paths.frameDataUri).create()
   new File(paths.locationDataUri).create()
 
@@ -88,7 +88,7 @@ export async function startRecordingSession(
   )
 
   // The timestamp controllers have been buffering since the preview
-  // mounted — none of that belongs to this session. GPS hasn't started yet,
+  // mounted and none of that belongs to this session. GPS hasn't started yet,
   // but a previous session may have left a tail behind.
   deps.frontFrames.drain()
   deps.backFrames.drain()
@@ -107,7 +107,7 @@ export async function startRecordingSession(
   ExpoGps.start()
 
   const drainIntoBuffers = (): void => {
-    // Second belt for the record-start boundary: a frame captured between
+    // Second belt for the record-start boundary. A frame captured between
     // the discard above and the recorders spinning up predates the session.
     const inSession = (timestampMs: number): boolean => timestampMs >= epochMs
     frameBuffer.appendFrames(
@@ -120,7 +120,7 @@ export async function startRecordingSession(
     locationBuffer.flush()
   }
 
-  // One 1s cadence for drain+append+flush: ~60 frame rows per write is
+  // One 1s cadence for drain, append and flush. About 60 frame rows per write is
   // already "periodic, not per-row" (CLAUDE.md) without a second timer.
   const interval = setInterval(drainIntoBuffers, 1000)
 
@@ -137,15 +137,15 @@ export async function startRecordingSession(
       ExpoGps.stop()
       drainIntoBuffers()
 
-      // Read at stop, not at mount: currentResolution populates
+      // Read at stop rather than at mount. currentResolution populates
       // asynchronously after the outputs connect (an immediate read races
-      // it — checkpoint 8's delayed log). By session end it has been
+      // it, hence checkpoint 8's delayed log). By session end it has been
       // stable for the whole recording.
       const frontResolution = deps.frontVideo.currentResolution
       const backResolution = deps.backVideo.currentResolution
       const metadata: SessionMetadata = {
         epochMs,
-        // Bookkeeping duration, same legal status as epochMs (checkpoint 5) —
+        // Bookkeeping duration, same legal status as epochMs (checkpoint 5).
         // data rows only ever carry native hardware clocks.
         durationMs: Date.now() - epochMs,
         frames: frameBuffer.counts(),

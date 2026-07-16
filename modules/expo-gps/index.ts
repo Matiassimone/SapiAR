@@ -1,8 +1,8 @@
 import { requireNativeModule } from 'expo-modules-core'
 
 /**
- * One raw GPS entry — a location fix or a hardware error, in one
- * chronological stream. Values are unclassified pass-throughs: CoreLocation
+ * One raw GPS entry, either a location fix or a hardware error, in one
+ * chronological stream. Values are unclassified pass-throughs. CoreLocation
  * encodes "unavailable" as negative numbers, and error entries carry a
  * non-null `errorCode` with all location fields null. Mapping to the spec's
  * `-1`/quality_flag semantics happens in TS data assembly (checkpoints 6/7).

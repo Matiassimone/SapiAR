@@ -4,7 +4,7 @@ import NitroModules
 import VisionCamera
 
 /// Owns one timestamp-capture camera output and exposes its buffer to TS.
-/// One instance per camera; `Source` is implicit — TS knows which camera each
+/// One instance per camera. `Source` is implicit because TS knows which camera each
 /// controller was attached to.
 final class FrameTimestampController: HybridFrameTimestampControllerSpec {
   private let cameraOutput = FrameTimestampCameraOutput()
@@ -31,10 +31,10 @@ final class FrameTimestampController: HybridFrameTimestampControllerSpec {
 ///
 /// Conforms to vision-camera's public `HybridCameraOutputSpec` +
 /// `NativeCameraOutput` (the documented custom-output extension point) with
-/// no overrides — spec inheritance is avoided entirely, see the design doc.
+/// no overrides. Spec inheritance is avoided entirely, see the design doc.
 ///
 /// Per CLAUDE.md Architecture Rule #2, the per-frame callback does the minimum
-/// possible work — one clock read already inside the sample buffer, one add,
+/// possible work. One clock read already inside the sample buffer, one add,
 /// one array append under a lock. No file I/O, no serialization, no JSI.
 private final class FrameTimestampCameraOutput: HybridCameraOutputSpec, NativeCameraOutput {
   let delegate = TimestampDelegate()
@@ -58,7 +58,7 @@ private final class FrameTimestampCameraOutput: HybridCameraOutputSpec, NativeCa
   // MARK: HybridCameraOutputSpec
 
   let mediaType: MediaType = .video
-  /// Stored but unapplied — orientation is meaningless for timestamp capture.
+  /// Stored but unapplied. Orientation is meaningless for timestamp capture.
   var outputOrientation: CameraOrientation = .up
   /// Metadata-only output: no pixel consumer, nothing meaningful to report.
   let currentResolution: Size? = nil
@@ -69,16 +69,16 @@ private final class FrameTimestampCameraOutput: HybridCameraOutputSpec, NativeCa
     // completeness). Our delegate work is ~ns, so late-frame pressure from
     // this output is not a realistic risk.
     output.alwaysDiscardsLateVideoFrames = false
-    // Note: `deliversPreviewSizedOutputBuffers` must never be set here — it
+    // `deliversPreviewSizedOutputBuffers` must never be set here. It
     // throws NSInvalidArgumentException on data-only outputs with no preview
-    // layer (uncatchable from Swift; crashed on device, checkpoint 8), and
+    // layer (uncatchable from Swift, crashed on device, checkpoint 8), and
     // the bandwidth concern it targeted doesn't apply: recording uses
     // AVCaptureMovieFileOutput, which adds no frame-streaming consumer.
     output.setSampleBufferDelegate(delegate, queue: queue)
   }
 
   func configure(config: OutputConfiguration) {
-    // Mirroring/orientation don't affect timestamps — nothing to apply.
+    // Mirroring and orientation don't affect timestamps, nothing to apply.
   }
 }
 
@@ -87,7 +87,7 @@ private final class FrameTimestampCameraOutput: HybridCameraOutputSpec, NativeCa
 private final class TimestampDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
   /// Host-clock → Unix-epoch anchor, computed once per output. Both readings
   /// are taken back-to-back (µs skew), so frame-to-frame deltas still come
-  /// 100% from the hardware clock — the anchor only positions the series on
+  /// 100% from the hardware clock. The anchor only positions the series on
   /// the epoch. This is not a per-frame `Date()` read (see design doc).
   private let epochOffsetMs: Double = {
     var wall = timespec()
@@ -98,7 +98,7 @@ private final class TimestampDelegate: NSObject, AVCaptureVideoDataOutputSampleB
   }()
 
   // NSLock over OSAllocatedUnfairLock: the pod's deployment target (RN's
-  // 15.1 floor) predates iOS 16, and lock traffic is ~60/s — contention is
+  // 15.1 floor) predates iOS 16, and lock traffic is ~60/s, so contention is
   // not a factor at this rate.
   private let lock = NSLock()
   private var timestampsMs: [Double] = []

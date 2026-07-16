@@ -10,9 +10,9 @@ import {
   Text,
   View,
 } from 'react-native'
-// Legacy Animated-based Swipeable on purpose: ReanimatedSwipeable requires
-// react-native-reanimated (babel plugin + worklets runtime) — too heavy a
-// native dependency for a swipe gesture on internal tooling.
+// Legacy Animated-based Swipeable. ReanimatedSwipeable requires
+// react-native-reanimated with its babel plugin and worklets runtime, too
+// heavy a native dependency for a swipe gesture on internal tooling.
 import { Swipeable } from 'react-native-gesture-handler'
 import MapView, { Marker, Polyline } from 'react-native-maps'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -92,12 +92,12 @@ function sessionRootUri(epochMs: number): string {
 }
 
 /**
- * Development/debug viewer (CLAUDE.md: not part of the evaluated UI).
- * Read-only over already-written session folders — every value shown is
- * read or grouped from the CSVs; nothing is recomputed from the pipeline's
- * inputs. Sole exception per amended Architecture Rule #7: whole-session
- * folder deletion via swipe on a list row (the gesture is iOS's own
- * confirmation friction; there is deliberately no second delete path).
+ * Development and debug viewer, not part of the evaluated UI per CLAUDE.md.
+ * Read-only over already-written session folders. Every value shown is
+ * read or grouped from the CSVs, nothing is recomputed from the pipeline's
+ * inputs. The sole exception, per amended Architecture Rule #7, is
+ * whole-session folder deletion via swipe on a list row. The gesture is
+ * iOS's own confirmation friction and there is no second delete path.
  */
 export default function SessionDebugScreen({
   onClose,
@@ -127,8 +127,8 @@ export default function SessionDebugScreen({
         metadataJson = await new File(`${root}/metadata.json`).text()
         metadata = JSON.parse(metadataJson) as SessionMetadata
       } catch {
-        // A crashed/interrupted session may lack metadata — the viewer still
-        // shows everything else rather than refusing to open.
+        // A crashed or interrupted session may lack metadata. The viewer
+        // still shows everything else rather than refusing to open.
       }
       const sizeOf = (name: string): number | null => {
         try {
@@ -218,7 +218,7 @@ export default function SessionDebugScreen({
           >
             <Pressable style={styles.row} onPress={() => void openSession(id)}>
               <Text style={styles.rowText}>
-                {new Date(id).toLocaleString()} — {id}_Session
+                {new Date(id).toLocaleString()} · {id}_Session
               </Text>
             </Pressable>
           </Swipeable>
@@ -268,11 +268,12 @@ export default function SessionDebugScreen({
               ))}
             </View>
             <Text style={styles.settingsNote}>
-              Applies when the camera session reconfigures (on leaving the debug
-              screens). A requested rate may negotiate lower — metadata.json
-              records what was actually negotiated. No resolution setting on
-              purpose: 1920×1440 is this 6-output multi-cam topology&apos;s
-              practical ceiling (the Camera app&apos;s 4K is single-camera).
+              Applies when the camera session reconfigures, on leaving the debug
+              screens. A requested rate may negotiate lower and metadata.json
+              records what was actually negotiated. There is no resolution
+              setting on purpose, 1920×1440 is the practical ceiling of this
+              6-output multi-cam topology. The Camera app&apos;s 4K is
+              single-camera.
             </Text>
           </View>
           <Pressable
@@ -346,7 +347,7 @@ function SessionDetail({
           })}
           renderItem={({ item, index }) => (
             <DataCard
-              title={`#${index} — ${item[1] ?? '?'}`}
+              title={`#${index} · ${item[1] ?? '?'}`}
               height={FRAME_ROW_HEIGHT - 8}
               fields={[
                 { label: 'Timestamp', value: item[0] ?? '' },
@@ -368,7 +369,7 @@ function SessionDetail({
           })}
           renderItem={({ item, index }) => (
             <DataCard
-              title={`#${index} — ${item[9] ?? '?'}`}
+              title={`#${index} · ${item[9] ?? '?'}`}
               height={GPS_ROW_HEIGHT - 8}
               accentColor={
                 item[9] === 'INTERP'
@@ -502,7 +503,11 @@ function OverviewTab({ summary }: { summary: SessionSummary }) {
 
       <InfoSection title={`Gaps filled (${summary.gaps.length})`}>
         {summary.gaps.length === 0 && (
-          <InfoRow kind="neutral" label="No gaps above threshold" value="—" />
+          <InfoRow
+            kind="neutral"
+            label="No gaps above threshold"
+            value="none"
+          />
         )}
         {summary.gaps.map((gap, index) => (
           <InfoRow
@@ -663,8 +668,8 @@ function EventsTab({ summary }: { summary: SessionSummary }) {
   const caveat = (
     <Text style={styles.eventsCaveat}>
       Only events iOS chose to surface. Silent frame-count degradation with no
-      accompanying system event is not detected here (stall detection is
-      deliberately out of scope — see the Decision Log).
+      accompanying system event is not detected here. Stall detection is out of
+      scope, see the Decision Log.
     </Text>
   )
   if (events == null) {
@@ -701,7 +706,7 @@ function EventsTab({ summary }: { summary: SessionSummary }) {
       {events.map((event, index) => (
         <DataCard
           key={`event-${index}`}
-          title={`#${index} — ${event.type}`}
+          title={`#${index} · ${event.type}`}
           accentColor={EVENT_ACCENT[event.type]}
           fields={[
             {
@@ -710,7 +715,7 @@ function EventsTab({ summary }: { summary: SessionSummary }) {
             },
             {
               label: 'Detail',
-              value: event.detail === '' ? '—' : event.detail,
+              value: event.detail === '' ? 'none' : event.detail,
             },
           ]}
         />
@@ -739,7 +744,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
-  // Only inside headerRow: fill the space between the side slots.
+  // Only inside headerRow, fills the space between the side slots.
   headerTitleRow: { flex: 1 },
   gearGlyph: { color: '#4a90d9', fontSize: 20, marginBottom: 8 },
   error: { color: '#f66', textAlign: 'center', padding: 8 },

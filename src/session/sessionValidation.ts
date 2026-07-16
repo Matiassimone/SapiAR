@@ -18,8 +18,8 @@ export interface SentinelResult {
   pass: boolean | null
 }
 
-// ponytail: tolerance = max(5 frames, 1%) — recorder start/stop boundary
-// slop measured at ±4 frames on a 64s session (0.2%); a real drop pattern
+// ponytail: tolerance = max(5 frames, 1%). Recorder start/stop boundary
+// slop measured at ±4 frames on a 64s session (0.2%). A real drop pattern
 // is an order of magnitude above this. Revisit against longer recordings.
 function frameCheck(
   fps: number | null,
@@ -71,9 +71,9 @@ export function checkGpsContinuity(
 }
 
 /**
- * Data Spec ERROR exception: every numeric column, including the timestamp,
+ * Data Spec ERROR exception, every numeric column, including the timestamp,
  * must be exactly -1 on sentinel rows. Reports "not exercised" (pass: null)
- * when a session simply had no hardware errors — absence of evidence isn't
+ * when a session had no hardware errors. Absence of evidence isn't
  * a pass.
  */
 export function checkSentinelRows(

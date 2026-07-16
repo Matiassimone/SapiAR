@@ -2,7 +2,7 @@ import type { GpsSample } from 'expo-gps'
 
 /**
  * A synthetic point created by gap interpolation. Real and hardware-error
- * entries pass through `interpolateGpsGaps` unchanged — OK/LOW_ACCURACY and
+ * entries pass through `interpolateGpsGaps` unchanged. OK/LOW_ACCURACY and
  * ERROR classification belong to CSV assembly (checkpoint 7), so this module
  * only ever assigns the one flag it owns: INTERP.
  */
@@ -22,7 +22,7 @@ export interface InterpolatedPoint {
 export type GpsStreamEntry = GpsSample | InterpolatedPoint
 
 // ponytail: 3000ms = 3× the 1Hz cadence verified on-device in checkpoint 4.
-// One missed update (2s silence) is normal jitter; two or more is a real gap.
+// One missed update (2s silence) is normal jitter, two or more is a real gap.
 // Revisit if Sapios targets a different update rate or tighter continuity.
 export const GPS_GAP_THRESHOLD_MS = 3000
 
@@ -62,12 +62,12 @@ function asRealFix(sample: GpsSample): RealFix | null {
 /**
  * Fills gaps above `gapThresholdMs` with evenly spaced synthetic points so no
  * consecutive positioned-point delta exceeds the threshold (GOAL.md §4 "no
- * large holes"; CLAUDE.md Validation Strategy checks exactly this property).
+ * large holes", and the CLAUDE.md Validation Strategy checks this property).
  *
- * Gap boundaries are real fixes only — hardware-error entries carry no
- * timestamp or position, so they can't bound an interpolation; they pass
+ * Gap boundaries are real fixes only. Hardware-error entries carry no
+ * timestamp or position, so they can't bound an interpolation. They pass
  * through in arrival order. A gap with no real fix on one side (start/end of
- * the array) is left alone: linear interpolation needs two bounds, and
+ * the array) is left alone. Linear interpolation needs two bounds, and
  * extrapolating would fabricate a trajectory.
  */
 export function interpolateGpsGaps(
@@ -88,7 +88,7 @@ export function interpolateGpsGaps(
   return result
 }
 
-// ponytail: linear position only — speed/course/accuracies are -1 on
+// ponytail: linear position only. Speed, course and accuracies are -1 on
 // synthetic rows, not interpolated. They weren't measured, the bounding
 // fixes frequently carry -1 themselves (stationary case, checkpoint 4),
 // and INTERP + -1 keeps synthetic rows unmistakable downstream. Revisit if

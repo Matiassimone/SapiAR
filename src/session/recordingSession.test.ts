@@ -145,7 +145,7 @@ async function startWith(
 }
 
 describe('startRecordingSession', () => {
-  it('creates both empty CSV files at start — Append mode never creates', async () => {
+  it('creates both empty CSV files at start because Append mode never creates', async () => {
     await startWith(fakeController([[]]), fakeController([[]]))
     // Before any flush has happened (no timer ticks yet):
     expect(mockFileCreates).toContain(
@@ -154,7 +154,7 @@ describe('startRecordingSession', () => {
     expect(mockFileCreates).toContain(
       'file:///docs/100000_Session/100000_LocationData.csv',
     )
-    // Truly empty: the header remains buffer-owned, written on first flush.
+    // Truly empty, the header remains buffer-owned, written on first flush.
     expect(mockFileWrites).toEqual({})
   })
 

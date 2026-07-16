@@ -1,7 +1,7 @@
 import CoreLocation
 import ExpoModulesCore
 
-/// One raw GPS entry — a location fix or a hardware error, in one
+/// One raw GPS entry, either a location fix or a hardware error, in one
 /// chronological stream. All values pass through unclassified: CoreLocation
 /// already encodes "unavailable" as negative numbers, and mapping those to
 /// the spec's `-1`/quality_flag semantics is TS data-assembly work
@@ -83,7 +83,7 @@ private final class GpsCapture: NSObject, CLLocationManagerDelegate {
       promise.resolve(false)
     case .notDetermined:
       // Resolved in locationManagerDidChangeAuthorization once iOS reports
-      // the user's choice — the request API itself returns immediately.
+      // the user's choice. The request API itself returns immediately.
       pendingPermission = promise
       manager.requestWhenInUseAuthorization()
     @unknown default:
@@ -98,7 +98,7 @@ private final class GpsCapture: NSObject, CLLocationManagerDelegate {
     DispatchQueue.main.async {
       let manager = self.ensureManager()
       // Every available update at best precision (GOAL.md §3): no distance
-      // gating, and no silent auto-pause — iOS may otherwise stop the stream
+      // gating, and no silent auto-pause. iOS may otherwise stop the stream
       // when it judges the user stationary, which breaks a continuous log.
       manager.desiredAccuracy = kCLLocationAccuracyBest
       manager.distanceFilter = kCLDistanceFilterNone
@@ -135,7 +135,7 @@ private final class GpsCapture: NSObject, CLLocationManagerDelegate {
       pendingPermission = nil
       promise.resolve(false)
     case .notDetermined:
-      // Fires once on delegate assignment before the user has chosen —
+      // Fires once on delegate assignment before the user has chosen,
       // keep waiting for the real outcome.
       break
     @unknown default:
@@ -145,7 +145,7 @@ private final class GpsCapture: NSObject, CLLocationManagerDelegate {
   }
 
   func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-    // CoreLocation can deliver several queued fixes in one callback — every
+    // CoreLocation can deliver several queued fixes in one callback and every
     // element is an update the spec wants (GOAL.md: every available update).
     let entries = locations.map { location -> GpsSample in
       let sample = GpsSample()
@@ -166,7 +166,7 @@ private final class GpsCapture: NSObject, CLLocationManagerDelegate {
 
   func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
     // Recorded in the same chronological buffer, never dropped. Transient
-    // errors (kCLErrorLocationUnknown) keep the manager running; whether an
+    // errors (kCLErrorLocationUnknown) keep the manager running. Whether an
     // entry becomes an ERROR sentinel row is downstream TS policy.
     let sample = GpsSample()
     let nsError = error as NSError

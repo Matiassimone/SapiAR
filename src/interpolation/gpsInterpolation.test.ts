@@ -59,7 +59,7 @@ describe('interpolateGpsGaps', () => {
     expect(result[0]).toBe(samples[0])
   })
 
-  it('does not interpolate a gap exactly at the threshold — only above triggers', () => {
+  it('does not interpolate a gap exactly at the threshold, only above triggers', () => {
     const samples = [fix({ timestampMs: 0 }), fix({ timestampMs: 3000 })]
     expect(interpolateGpsGaps(samples, 3000)).toEqual(samples)
   })
@@ -113,7 +113,7 @@ describe('interpolateGpsGaps', () => {
       fix({ timestampMs: 15000 }),
     ]
     const result = interpolateGpsGaps(samples, 3000)
-    // gap 0->7000: ceil(7/3)-1 = 2 synthetics; gap 8000->15000: 2 synthetics
+    // gap 0->7000 gets ceil(7/3)-1 = 2 synthetics, gap 8000->15000 gets 2
     expect(syntheticsOf(result)).toHaveLength(4)
     expect(result).toHaveLength(8)
   })
@@ -140,7 +140,7 @@ describe('interpolateGpsGaps', () => {
       fix({ timestampMs: 10000, lat: 20, long: 40 }),
     ]
     const result = interpolateGpsGaps(samples, 3000)
-    // The error passes through in arrival order; the gap is still measured
+    // The error passes through in arrival order. The gap is still measured
     // between the two real fixes and still filled.
     expect(syntheticsOf(result)).toHaveLength(3)
     expect(result[1]).toBe(samples[1])
