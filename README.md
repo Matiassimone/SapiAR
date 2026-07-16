@@ -462,3 +462,48 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
   state. Same investigation surfaced and fixed a record-button double-tap
   race (session start not claimed until after an await — a fast second tap
   could launch a concurrent session over the same native buffers).
+
+### Pre-checkpoint-10 — ERROR sentinel proven on real hardware; resolution exported
+
+- **The ERROR sentinel row is now proven end-to-end on a real device** —
+  a 19 s indoor recording with GPS starved by airplane mode
+  (`docs/sample-output-error-path/`, supplementary evidence; the primary
+  sample output remains checkpoint 10's outdoor walk). The full
+  `LocationData.csv`:
+
+  ```csv
+  Timestamp_unix_ms,Lat,Long,Speed_m_s,Course_deg,CourseAccuracy_deg,HorizontalAccuracy_m,VerticalAccuracy_m,is_interpolated,quality_flag
+  -1,-1,-1,-1,-1,-1,-1,-1,0,ERROR
+  1784169476533,-38.00871814204318,-57.550821264186716,-1,-1,-1,12.795014,30.970958114416394,0,OK
+  ```
+
+  Every numeric field `-1` including the timestamp (the Data Spec's
+  literal reading), `is_interpolated=0`, and the row was written — not
+  silently dropped — exactly the "never leave a gap" property CLAUDE.md's
+  Validation Strategy wanted forced. Zero `INTERP` rows is correct here,
+  not a miss: only one real fix exists, and interpolation needs two real
+  bounds (Architecture Rule #9).
+
+- **The single real fix arrived 91 ms after `epochMs`** — far too fast
+  for an unassisted satellite acquisition under airplane mode. This is
+  almost certainly CoreLocation's cached last-known-location first
+  delivery, the same startup behavior documented in checkpoint 4 — but
+  timestamped fresh (post-epoch), so the pre-session filter correctly
+  kept it. Known CoreLocation behavior, not a new bug; noted so nobody
+  reads that fix as a live airplane-mode acquisition.
+- **Implication for checkpoint 10:** the airplane-mode toggle is now
+  optional evidence-gathering, not a blocking requirement — the ERROR
+  path has real-hardware proof. The outdoor walk should spend its time
+  on what's still unproven: real motion (the speed/course pending item
+  open since checkpoint 4) and enough duration for a natural GPS gap to
+  show `INTERP` on a moving track.
+- **Negotiated resolution now exported to `metadata.json`** (closing the
+  gap checkpoint 9 flagged): a `resolution` field
+  (`{ front: {width, height}, back: {...} }`) read from the video
+  outputs' `currentResolution` at session stop — by then the value has
+  been stable all session, avoiding the populate-race a mount-time read
+  has (checkpoint 8's delayed log). Note: `onSessionConfigSelected`'s
+  payload carries no resolution (only fps/stabilization/pixel-format/
+  binning), so the value comes from the already-held video outputs in
+  `RecordingDeps` — still no new capture path. Omitted (like `fps`) when
+  never reported. TDD: 3 new/updated tests, 71 total.
