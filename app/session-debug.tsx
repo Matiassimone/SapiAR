@@ -614,6 +614,34 @@ function MetadataTab({ summary }: { summary: SessionSummary }) {
           </>
         )}
       </InfoSection>
+      <InfoSection title="Camera config">
+        {metadata.cameraConfig == null ? (
+          <InfoRow
+            kind="neutral"
+            label="config ladder"
+            value="not recorded (pre-ladder session)"
+          />
+        ) : (
+          <>
+            <InfoRow
+              kind={metadata.cameraConfig.degraded ? 'neutral' : 'pass'}
+              label={
+                metadata.cameraConfig.degraded
+                  ? 'Degraded fallback config'
+                  : 'Ideal config'
+              }
+              value={`rung ${metadata.cameraConfig.step}`}
+              valueColor={
+                metadata.cameraConfig.degraded ? '#ff9500' : '#34c759'
+              }
+            />
+            <InfoRow
+              label="binned"
+              value={String(metadata.cameraConfig.binned)}
+            />
+          </>
+        )}
+      </InfoSection>
     </ScrollView>
   )
 }
