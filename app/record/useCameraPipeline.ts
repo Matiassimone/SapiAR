@@ -37,12 +37,6 @@ interface CameraPipelineArgs {
   recordingRef: RefObject<ActiveRecording | null>
 }
 
-/**
- * Owns camera bring-up and its whole lifecycle. Ladder-based negotiation,
- * session-health listeners, the health banner state, and teardown. Called
- * from App so the camera session survives navigation to the debug screen,
- * which only changes what renders.
- */
 export function useCameraPipeline({
   targetFps,
   recordEvent,
@@ -57,20 +51,17 @@ export function useCameraPipeline({
   const [retryNonce, setRetryNonce] = useState(0)
 
   // The exhaustive-deps rule cannot see that the incoming refs are stable
-  // useRef values from the composition root, nor that recordEvent only
-  // runs inside listener callbacks. The effect must re-run only on
-  // targetFps or retryNonce (fps change or manual retry), exactly the
-  // pre-refactor behavior when all of this lived in App.
+  // useRef values from the composition root. The effect must re-run only on
+  // targetFps or retryNonce (fps change or manual retry).
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     let session: CameraSession | undefined
     let cancelled = false
     const healthSubs: ListenerSubscription[] = []
 
-    // First-frame gate reusing the health watchdog's signal, a zero count
-    // on a timestamp controller. Resolves true as soon as both cameras
-    // have delivered a frame, false on the 5 s deadline, cancellation, or
-    // an external failure (interruption or error during bring-up).
+    // First-frame gate, same zero-count signal as the health watchdog.
+    // True once both cameras delivered a frame. False on the 5 s deadline,
+    // cancellation, or interruption/error during bring-up.
     const waitForFirstFrames = (
       frontFrames: { count: number },
       backFrames: { count: number },
@@ -93,10 +84,8 @@ export function useCameraPipeline({
         })
       })
 
-    // One full bring-up attempt with a single ladder candidate. Outputs
-    // and session are created fresh per attempt, a failed session's
-    // outputs are never reused. Returns null on any failure so the caller
-    // moves down the ladder. Only ladder exhaustion reaches the user.
+    // One bring-up attempt per ladder candidate. Fresh outputs and session
+    // each time, never reused after failure. Null return advances the ladder.
     const attemptCandidate = async (
       candidate: CameraConfigCandidate,
       devices: { front: CameraDevice; back: CameraDevice },
@@ -108,13 +97,11 @@ export function useCameraPipeline({
       const frontFrames = createFrameTimestampController()
       const backFrames = createFrameTimestampController()
 
-      // The candidate's target expresses GOAL.md's "highest available
-      // quality" as negotiation intent, with HIGHEST_4_3 non-binned on
-      // rung 1. Multi-cam formats on this hardware are 4:3 sensor-native
-      // families. The target alone is not enough. Without the
-      // resolutionBias and binned constraints below, the multi-cam
-      // negotiator settles on its smallest binned format (640×480,
-      // verified on device) regardless of any output's target resolution.
+      // Target resolution alone isn't enough on this hardware (4:3 multi-cam
+      // families). Without resolutionBias + binned below, vision-camera
+      // silently negotiates its smallest binned format (640x480, verified on
+      // device) no matter what target is set. Found via 5 device experiments,
+      // checkpoint 8. Don't remove these constraints as "redundant" with target.
       const createVideo = (): CameraVideoOutput =>
         VisionCamera.createVideoOutput({
           targetResolution: candidate.targetResolution,
@@ -125,9 +112,9 @@ export function useCameraPipeline({
       let frontFps: number | null = null
       let backFps: number | null = null
 
-      // Video outputs join the session at mount. Reconfiguring a running
-      // session re-negotiates formats and glitches the preview, while an idle
-      // recorder output does no encoding work (see checkpoint 8 design doc).
+      // Video outputs join at mount. Reconfiguring a running session
+      // re-negotiates formats and glitches the preview. An idle recorder
+      // output does no encoding work (checkpoint 8 design doc).
       const connections: CameraSessionConnection[] = [
         {
           input: devices.front,
@@ -166,11 +153,9 @@ export function useCameraPipeline({
       let attemptSession: CameraSession | undefined
       try {
         attemptSession = await VisionCamera.createCameraSession(true)
-        // Session-health listeners, the JS bridge of AVFoundation's
-        // interruption and runtime-error notifications. Their role switches
-        // at first frame. Before it they fail this bring-up attempt
-        // silently in ladder mode. After it they feed the red banner with
-        // the actual cause, for example
+        // AVFoundation interruption/error listeners. Until first frame they
+        // fail the attempt silently (ladder mode). After it they feed the
+        // banner with the cause, e.g.
         // 'video-device-not-available-due-to-system-pressure'.
         let broughtUp = false
         let failBringUp: (() => void) | undefined
@@ -207,14 +192,11 @@ export function useCameraPipeline({
           }),
         )
         await attemptSession.configure(connections)
-        // setOutputSettings is never called. Under AVCaptureMultiCamSession
-        // it throws an uncatchable ObjC exception on every attempt, binned
-        // or non-binned format, with h265 listed in
-        // getSupportedVideoCodecs() or not. Verified across five on-device
-        // configurations, a vision-camera v5 library bug. The library's
-        // default codec is empirically HEVC/hvc1 on this hardware, which
-        // satisfies GOAL.md §1's "HEVC preferred". The one-shot log below
-        // is the per-run evidence.
+        // Never call setOutputSettings under AVCaptureMultiCamSession. It
+        // throws an uncatchable ObjC exception in every config tested (5
+        // device experiments, h265 listed as supported or not), a
+        // vision-camera v5 bug. The default codec is already HEVC/hvc1 on
+        // this hardware. The log below is the per-run evidence.
         console.log(
           `[camera-config] rung ${candidate.step} codecs front ${frontVideo.getSupportedVideoCodecs().join('/')}, ` +
             `back ${backVideo.getSupportedVideoCodecs().join('/')} ` +
@@ -237,9 +219,8 @@ export function useCameraPipeline({
           return null
         }
         broughtUp = true
-        // Delayed read. currentResolution populates asynchronously after
-        // the connections form, so an immediate read after start() races
-        // it.
+        // currentResolution populates async after connections form. Reading
+        // right after start() races it, hence the delay.
         setTimeout(() => {
           console.log(
             `[camera-config] negotiated resolutions front ${JSON.stringify(frontVideo.currentResolution)}, back ${JSON.stringify(backVideo.currentResolution)}, fps front ${String(frontFps)}, back ${String(backFps)}`,
@@ -291,11 +272,10 @@ export function useCameraPipeline({
         return
       }
 
-      // Only hardware-supported device combinations can share one multi-cam
-      // session, so devices are never paired manually. Among the front+back
-      // combinations the last one is used. It is the configuration that
-      // verifiably negotiated 1920×1440@30 on device, while the first combo
-      // reported no currentResolution under identical constraints.
+      // Never pair devices manually, only reported combinations can share a
+      // multi-cam session. The LAST front+back combo is used on purpose. It
+      // negotiated 1920x1440@30 on device, the first combo reported no
+      // currentResolution under identical constraints.
       const deviceFactory = await VisionCamera.createDeviceFactory()
       const frontBackCombos =
         deviceFactory.supportedMultiCamDeviceCombinations.filter(
@@ -317,16 +297,15 @@ export function useCameraPipeline({
         return
       }
 
-      // Degradation ladder for intermittent hardwareCost failures
-      // (-11872) at bring-up. Ideal config first, then Apple's documented
-      // mitigations. Symbolic tiers, not device pixel values. Design note
-      // in docs/design/2026-07-16-camera-config-ladder.md.
+      // hardwareCost degradation ladder (-11872). Ideal first, then Apple's
+      // documented mitigations. See cameraConfigLadder.ts and its design note.
       const ladder = buildCandidateLadder(targetFps, [
         CommonResolutions.HIGHEST_4_3,
         CommonResolutions.FHD_4_3,
       ])
       let failures = 0
       let candidate = nextCandidate(ladder, failures)
+
       while (candidate != null && !cancelled) {
         const rigForCandidate = await attemptCandidate(candidate, {
           front: frontDevice,
@@ -346,8 +325,7 @@ export function useCameraPipeline({
         candidate = nextCandidate(ladder, failures)
       }
       if (!cancelled) {
-        // Every rung failed, so only now does the failure reach the user.
-        // The banner's manual tap restarts the whole ladder from rung 1.
+        // Every rung failed. The banner's tap restarts the ladder from rung 1.
         setStatus('')
         setCameraHealth('Camera not responding. Tap to retry')
       }
@@ -365,10 +343,9 @@ export function useCameraPipeline({
       ExpoGps.stop()
       void session?.stop()
     }
-    // Re-running on fps change or a health-banner retry tears the camera
-    // session down and negotiates fresh. Only reachable between recordings,
-    // since the debug screen that hosts the setting is hidden while
-    // recording and the banner is hidden too. Never a live renegotiation.
+    // Re-runs on fps change or banner retry, full teardown + fresh
+    // negotiation. Only reachable between recordings (both triggers are
+    // hidden while recording), never a live renegotiation.
   }, [targetFps, retryNonce])
   /* eslint-enable react-hooks/exhaustive-deps */
 

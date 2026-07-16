@@ -2,48 +2,7 @@
 
 Dual-camera + GPS data collection prototype, technical exercise for Sapios.
 
-## Status
-
-Final write-up drafted below (380 words), sourced from the real Technical
-Decision Log entries, not written from scratch. Still pending are
-checkpoint 10's sample output extraction to `docs/sample-output/` and a
-final read-through before submission.
-
----
-
-## TL;DR (Bitácora Highlights)
-
-Six findings worth reading first, each pointing at its full entry below.
-
-1. Frame timestamps use vision-camera v5's `NativeCameraOutput` extension
-   point instead of the JS-worklet Frame Processor Plugin path, avoiding
-   the exact per-frame JS hop the project's core principle forbids
-   (checkpoint 3).
-2. Two independent capture paths converge on the same Unix-ms axis
-   through different, documented routes. Frames anchor a host-clock
-   series once per session. GPS reads a wall-clock timestamp directly.
-   This is the real synchronization design (checkpoints 3-4).
-3. Native modules emit raw hardware values only. Every classification
-   (`OK`, `LOW_ACCURACY`, `ERROR`, `INTERP`) lives in pure, unit-tested
-   TypeScript, testable without a device (checkpoints 4, 6-7).
-4. Three device-only bugs were found and root-caused in vision-camera v5
-   itself. A crashing preview-buffer optimization, a broken
-   `setOutputSettings` under multi-cam, and missing resolution-negotiation
-   intent that silently capped quality 9x. None of these reproduced on
-   simulator (checkpoint 8).
-5. Real outdoor testing found a sustained-load resilience issue. 60fps
-   intermittently loses frame-timestamp delivery mid-recording under
-   multi-cam pressure while video and GPS stay healthy. 30fps proved
-   stable across every test, so the deliverable uses 30fps on purpose,
-   not by default (checkpoint 10).
-6. Two resilience layers shipped the same day instead of one unverified
-   guess. A degrading config ladder handles bring-up failures. A
-   persistent Events log handles observability. Both state their limits
-   honestly instead of hiding behind a green checkmark.
-
----
-
-## Final Write-up (Synchronization, Tradeoffs, Improvements)
+## Final Write-up
 
 Both CSVs share a Unix-ms epoch, but the two capture paths reach it
 differently. Frame timestamps come from
@@ -196,6 +155,38 @@ Environment issues hit during development — documented so a fresh clone doesn'
 - **CocoaPods must be >= 1.13.0.** Older versions fail `pod install` with `Unrecognized option(s) always_out_of_date in script phase` — Expo's generated `Podfile` uses a script-phase option older CocoaPods doesn't recognize. Fix: `brew upgrade cocoapods` (or `gem install cocoapods`), then `cd ios && pod deintegrate && rm -rf Pods Podfile.lock && cd .. && npx expo run:ios`.
 - **npm CLI must be >= 11.10.0** for `.npmrc`'s `min-release-age` to take effect. Don't jump straight to `npm@latest` — as of npm v12, the engine requirement is Node `^22.22.2 || ^24.15.0 || >=26.0.0`; on an older Node, `npm install -g npm@latest` fails with `EBADENGINE`. Use `npm install -g npm@11` instead unless Node is already current.
 - **First run on a physical iOS device:** after `npx expo run:ios --device`, the app installs but launch fails with a code-signature error unless the developer profile is explicitly trusted: **Settings → General → VPN & Device Management → [Apple ID] → Trust**. Standard iOS behavior for free/personal developer accounts, not a build issue.
+
+---
+
+## TL;DR (Bitácora Highlights)
+
+Six findings worth reading first, each pointing at its full entry below.
+
+1. Frame timestamps use vision-camera v5's `NativeCameraOutput` extension
+   point instead of the JS-worklet Frame Processor Plugin path, avoiding
+   the exact per-frame JS hop the project's core principle forbids
+   (checkpoint 3).
+2. Two independent capture paths converge on the same Unix-ms axis
+   through different, documented routes. Frames anchor a host-clock
+   series once per session. GPS reads a wall-clock timestamp directly.
+   This is the real synchronization design (checkpoints 3-4).
+3. Native modules emit raw hardware values only. Every classification
+   (`OK`, `LOW_ACCURACY`, `ERROR`, `INTERP`) lives in pure, unit-tested
+   TypeScript, testable without a device (checkpoints 4, 6-7).
+4. Three device-only bugs were found and root-caused in vision-camera v5
+   itself. A crashing preview-buffer optimization, a broken
+   `setOutputSettings` under multi-cam, and missing resolution-negotiation
+   intent that silently capped quality 9x. None of these reproduced on
+   simulator (checkpoint 8).
+5. Real outdoor testing found a sustained-load resilience issue. 60fps
+   intermittently loses frame-timestamp delivery mid-recording under
+   multi-cam pressure while video and GPS stay healthy. 30fps proved
+   stable across every test, so the deliverable uses 30fps on purpose,
+   not by default (checkpoint 10).
+6. Two resilience layers shipped the same day instead of one unverified
+   guess. A degrading config ladder handles bring-up failures. A
+   persistent Events log handles observability. Both state their limits
+   honestly instead of hiding behind a green checkmark.
 
 ---
 
@@ -637,10 +628,10 @@ CameraOutput` generates uncompilable Swift). Specs are standalone;
 ### Pre-checkpoint-10 — ERROR sentinel proven on real hardware; resolution exported
 
 - **The ERROR sentinel row is now proven end-to-end on a real device** —
-  a 19 s indoor recording with GPS starved by airplane mode
-  (`docs/sample-output-error-path/`, supplementary evidence; the primary
-  sample output remains checkpoint 10's outdoor walk). The full
-  `LocationData.csv`:
+  a 19 s indoor recording with GPS starved by airplane mode. The sample
+  output folder for this specific finding was not kept in the repo, the
+  full `LocationData.csv` is quoted below. The deliverable sample output,
+  from checkpoint 10's outdoor walk, is in `docs/sample-output/`.
 
   ```csv
   Timestamp_unix_ms,Lat,Long,Speed_m_s,Course_deg,CourseAccuracy_deg,HorizontalAccuracy_m,VerticalAccuracy_m,is_interpolated,quality_flag

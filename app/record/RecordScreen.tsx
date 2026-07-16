@@ -5,12 +5,7 @@ import { NativePreviewView } from 'react-native-vision-camera'
 import { styles } from './recordScreen.styles'
 import type { CameraRig } from './useCameraPipeline'
 
-/**
- * The evaluated minimal UI per GOAL.md §7. Dual preview, one record/stop
- * button, a timer, plus the health banner, the event toast, and the
- * debug-screen entry. Purely presentational, every piece of state comes
- * from the hooks composed in App.
- */
+/** The evaluated minimal UI (GOAL.md §7). Presentational only. */
 export default function RecordScreen({
   rig,
   status,

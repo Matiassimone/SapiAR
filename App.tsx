@@ -20,6 +20,7 @@ export default function App() {
 
   const { toast, dismissToast, toastTimerRef, eventsRef, recordEvent } =
     useSessionEvents(recordingRef)
+
   const { rig, status, setStatus, cameraHealth, clearHealth, retryBringUp } =
     useCameraPipeline({
       targetFps,
@@ -29,6 +30,7 @@ export default function App() {
       timerRef,
       recordingRef,
     })
+
   const { elapsedS, toggleRecording } = useRecording(
     rig,
     recordingRef,
@@ -43,8 +45,6 @@ export default function App() {
             onClose={() => setShowDebug(false)}
             targetFps={targetFps}
             onChangeTargetFps={(fps) => {
-              // A pending health banner is stale once the session is about
-              // to renegotiate. The effect re-runs on this change.
               clearHealth()
               setTargetFps(fps)
             }}

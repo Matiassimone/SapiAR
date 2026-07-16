@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
-// Legacy Animated-based Swipeable. ReanimatedSwipeable requires
-// react-native-reanimated with its babel plugin and worklets runtime, too
-// heavy a native dependency for a swipe gesture on internal tooling.
+// Legacy Swipeable on purpose. ReanimatedSwipeable needs
+// react-native-reanimated (babel plugin + worklets runtime), too heavy a
+// dependency for one swipe gesture on internal tooling.
 import { Swipeable } from 'react-native-gesture-handler'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -11,14 +11,6 @@ import { SessionDetail } from './SessionDetail'
 import { styles } from './sessionDebug.styles'
 import { useSessionBrowser } from './useSessionBrowser'
 
-/**
- * Development and debug viewer, not part of the evaluated UI per CLAUDE.md.
- * Read-only over already-written session folders. Every value shown is
- * read or grouped from the CSVs, nothing is recomputed from the pipeline's
- * inputs. The sole exception, per amended Architecture Rule #7, is
- * whole-session folder deletion via swipe on a list row. The gesture is
- * iOS's own confirmation friction and there is no second delete path.
- */
 export default function SessionDebugScreen({
   onClose,
   targetFps,
@@ -48,7 +40,7 @@ export default function SessionDebugScreen({
       <View style={styles.headerRow}>
         <View style={styles.headerSide} />
         <Text style={[styles.headerTitle, styles.headerTitleRow]}>
-          Sessions (debug)
+          Sessions
         </Text>
         <Pressable
           style={styles.headerSide}
@@ -81,10 +73,12 @@ export default function SessionDebugScreen({
             </Pressable>
           </Swipeable>
         ))}
+
         {listing.ids.length === 0 && (
           <Text style={styles.empty}>No recorded sessions on this device.</Text>
         )}
       </ScrollView>
+
       <Pressable
         style={[styles.closeButton, { paddingBottom: 16 + insets.bottom }]}
         onPress={onClose}

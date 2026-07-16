@@ -9,13 +9,7 @@ import type { SessionSummary } from './useSessionBrowser'
 
 export function EventsTab({ summary }: { summary: SessionSummary }) {
   const events = summary.metadata?.events
-  const caveat = (
-    <Text style={styles.eventsCaveat}>
-      Only events iOS chose to surface. Silent frame-count degradation with no
-      accompanying system event is not detected here. Stall detection is out of
-      scope, see the Decision Log.
-    </Text>
-  )
+
   if (events == null) {
     return (
       <ScrollView>
@@ -26,7 +20,6 @@ export function EventsTab({ summary }: { summary: SessionSummary }) {
             value="session predates event logging"
           />
         </InfoSection>
-        {caveat}
       </ScrollView>
     )
   }
@@ -41,7 +34,6 @@ export function EventsTab({ summary }: { summary: SessionSummary }) {
             valueColor="#34c759"
           />
         </InfoSection>
-        {caveat}
       </ScrollView>
     )
   }

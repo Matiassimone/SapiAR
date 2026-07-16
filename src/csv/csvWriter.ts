@@ -24,8 +24,8 @@ export function formatFrameRow(
 }
 
 /**
- * CoreLocation encodes "unavailable" as negative values (checkpoint 4 raw
- * pass-through). The spec wants those written as exactly -1.
+ * CoreLocation encodes "unavailable" as negative values. The spec wants
+ * those written as exactly -1.
  */
 function numericColumn(value: number | null): number {
   return value == null || value < 0 ? -1 : value
@@ -61,12 +61,11 @@ export function formatLocationRow(entry: GpsStreamEntry): string {
 
 /**
  * Drops fixes timestamped before the session epoch. CoreLocation's first
- * delivery is often a cached pre-session location (checkpoint 4 real-device
- * finding, an 80.2s span inside a 20s-old session). Those fixes aren't this
- * session's data, and MUST be removed before gap interpolation runs or the
- * cached fix becomes a false anchor producing synthetic points that never
- * happened. Error entries carry no timestamp and are kept, they occurred
- * during the session and still owe the file a sentinel row.
+ * delivery is often a cached pre-session location, confirmed on device
+ * (an 80.2s-old fix inside a 20s-old session). Must run before
+ * interpolation, or that cached fix anchors synthetic points that never
+ * happened. Error entries carry no timestamp and are kept regardless,
+ * they still owe a sentinel row.
  */
 export function filterPreSessionSamples(
   samples: readonly GpsSample[],

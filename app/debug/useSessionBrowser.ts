@@ -49,10 +49,9 @@ function sessionRootUri(epochMs: number): string {
 }
 
 /**
- * Owns the session folder browsing state. Listing, the opened session's
- * parsed summary, and whole-folder deletion. Everything a summary holds is
- * read or grouped from the already-written CSVs, nothing is recomputed
- * from the pipeline's inputs.
+ * Owns listing, the opened session's parsed summary, and whole-folder
+ * deletion. Everything shown is read from the written CSVs, nothing is
+ * recomputed from pipeline inputs (Architecture Rule #7).
  */
 export function useSessionBrowser() {
   const [listing, setListing] = useState(listSessions)

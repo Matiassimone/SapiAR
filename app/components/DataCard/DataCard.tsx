@@ -2,7 +2,6 @@ import { Text, View } from 'react-native'
 
 import { styles } from './DataCard.styles'
 
-/** Card-per-datum list item, a titled card with label/value lines. */
 export function DataCard({
   title,
   accentColor,

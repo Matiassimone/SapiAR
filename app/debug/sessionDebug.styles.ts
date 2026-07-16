@@ -17,11 +17,11 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',
-    marginBottom: 8,
+    marginBottom: 20,
   },
   // Only inside headerRow, fills the space between the side slots.
   headerTitleRow: { flex: 1 },
-  gearGlyph: { color: '#4a90d9', fontSize: 20, marginBottom: 8 },
+  gearGlyph: { color: '#4a90d9', fontSize: 32, marginBottom: 8 },
   error: { color: '#f66', textAlign: 'center', padding: 8 },
   sheet: {
     flex: 1,
@@ -29,7 +29,6 @@ export const styles = StyleSheet.create({
     paddingTop: 24,
   },
   settingsCard: {
-    backgroundColor: '#1c1c1e',
     borderRadius: 10,
     marginHorizontal: 12,
     marginBottom: 8,
@@ -41,7 +40,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
     paddingHorizontal: 12,
-    marginBottom: 8,
+    marginBottom: 20,
   },
   segment: {
     flex: 1,
@@ -73,8 +72,8 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 12,
     gap: 8,
-    marginTop: 16,
-    marginBottom: 14,
+    marginTop: 20,
+    marginBottom: 20,
   },
   videoBox: { flex: 1 },
   videoLabel: { color: '#ddd', fontSize: 13, marginBottom: 4 },

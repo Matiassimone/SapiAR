@@ -1,11 +1,9 @@
 import CoreLocation
 import ExpoModulesCore
 
-/// One raw GPS entry, either a location fix or a hardware error, in one
-/// chronological stream. All values pass through unclassified: CoreLocation
-/// already encodes "unavailable" as negative numbers, and mapping those to
-/// the spec's `-1`/quality_flag semantics is TS data-assembly work
-/// (see CLAUDE.md architecture table and the checkpoint-4 design doc).
+/// One raw GPS entry (fix or hardware error) in one chronological stream.
+/// Never classified here, CoreLocation's own negative values for
+/// "unavailable" pass through untouched. Turning these into -1/quality_flag is TS's job.
 struct GpsSample: Record {
   @Field var timestampMs: Double?
   @Field var lat: Double?
@@ -20,6 +18,7 @@ struct GpsSample: Record {
   @Field var errorDomain: String?
 }
 
+/// JS-facing entry point (Expo Module).
 public class ExpoGpsModule: Module {
   private let capture = GpsCapture()
 
@@ -48,10 +47,9 @@ public class ExpoGpsModule: Module {
   }
 }
 
-/// Owns the CLLocationManager and the sample buffer. Lives on the main
-/// thread: CLLocationManager requires a run-loop thread for its delegate
-/// callbacks, and main is the only one guaranteed alive for the app's
-/// lifetime. Buffer appends/reads are NSLock-guarded because `drain()` and
+/// Owns the CLLocationManager and the sample buffer. Main-thread because
+/// CLLocationManager needs a run-loop thread and main is the only one
+/// guaranteed alive app-long. NSLock guards the buffer, `drain()` and
 /// `count` arrive from the JS thread.
 private final class GpsCapture: NSObject, CLLocationManagerDelegate {
   private var manager: CLLocationManager?
@@ -92,12 +90,12 @@ private final class GpsCapture: NSObject, CLLocationManagerDelegate {
   }
 
   func start() {
-    // Dispatched to main: CLLocationManager needs a run-loop thread, and
-    // sync expo Functions arrive on the JS thread (`runOnQueue` is only
-    // available on AsyncFunction in this expo-modules version).
+    // Dispatched to main manually: CLLocationManager needs a run-loop
+    // thread, and this call itself arrives on the JS thread.
     DispatchQueue.main.async {
       let manager = self.ensureManager()
-      // Every available update at best precision (GOAL.md §3): no distance
+
+      // Every available update at best precision: no distance
       // gating, and no silent auto-pause. iOS may otherwise stop the stream
       // when it judges the user stationary, which breaks a continuous log.
       manager.desiredAccuracy = kCLLocationAccuracyBest
@@ -145,8 +143,6 @@ private final class GpsCapture: NSObject, CLLocationManagerDelegate {
   }
 
   func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-    // CoreLocation can deliver several queued fixes in one callback and every
-    // element is an update the spec wants (GOAL.md: every available update).
     let entries = locations.map { location -> GpsSample in
       let sample = GpsSample()
       sample.timestampMs = location.timestamp.timeIntervalSince1970 * 1000.0
@@ -165,9 +161,9 @@ private final class GpsCapture: NSObject, CLLocationManagerDelegate {
   }
 
   func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-    // Recorded in the same chronological buffer, never dropped. Transient
-    // errors (kCLErrorLocationUnknown) keep the manager running. Whether an
-    // entry becomes an ERROR sentinel row is downstream TS policy.
+    // Recorded in the same buffer as real fixes, never dropped. The manager
+    // keeps running after a transient error (like no signal yet), it isn't
+    // stopped or reset here.
     let sample = GpsSample()
     let nsError = error as NSError
     sample.errorCode = nsError.code

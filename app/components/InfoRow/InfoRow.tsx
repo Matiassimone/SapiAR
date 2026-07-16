@@ -3,7 +3,6 @@ import { Text, View } from 'react-native'
 import { Glyph, type GlyphKind } from '../Glyph'
 import { styles } from './InfoRow.styles'
 
-/** Icon + label + value row, the grouped-list line item. */
 export function InfoRow({
   kind = 'info',
   label,

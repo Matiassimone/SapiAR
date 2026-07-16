@@ -99,8 +99,11 @@ export function SessionDetail({
           )}
         />
       )}
+
       {tab === 'Metadata' && <MetadataTab summary={summary} />}
+
       {tab === 'Events' && <EventsTab summary={summary} />}
+
       <Pressable
         style={[styles.closeButton, { paddingBottom: 16 + bottomInset }]}
         onPress={onBack}

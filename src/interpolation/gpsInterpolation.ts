@@ -60,15 +60,11 @@ function asRealFix(sample: GpsSample): RealFix | null {
 }
 
 /**
- * Fills gaps above `gapThresholdMs` with evenly spaced synthetic points so no
- * consecutive positioned-point delta exceeds the threshold (GOAL.md §4 "no
- * large holes", and the CLAUDE.md Validation Strategy checks this property).
- *
- * Gap boundaries are real fixes only. Hardware-error entries carry no
- * timestamp or position, so they can't bound an interpolation. They pass
- * through in arrival order. A gap with no real fix on one side (start/end of
- * the array) is left alone. Linear interpolation needs two bounds, and
- * extrapolating would fabricate a trajectory.
+ * Fills gaps above `gapThresholdMs` with evenly spaced synthetic points so
+ * no consecutive delta exceeds the threshold (GOAL.md §4, checked live by
+ * the Validation Strategy). Only real fixes bound a gap. Error entries have
+ * no timestamp or position and pass through. Edges are left alone, linear
+ * interpolation needs two bounds and extrapolating fabricates a trajectory.
  */
 export function interpolateGpsGaps(
   samples: readonly GpsSample[],

@@ -1,9 +1,5 @@
 # SapiAR - CLAUDE.md
 
-This file is the source of truth for Claude Code. Every architectural and data-spec decision documented here was made deliberately, based on the hiring task issued by Sapios (see `GOAL.md`). Do not propose alternatives to decisions already made unless a concrete problem justifies it.
-
----
-
 ## What is SapiAR
 
 SapiAR is a **dual-camera + GPS data collection prototype**, built as a technical hiring exercise for Sapios ("Automated Road Test System" — sapios.io). It is not a product; it is a focused demonstration of one core subsystem: **simultaneous front/back camera recording with hardware-accurate, synchronized GPS logging and gap interpolation**.

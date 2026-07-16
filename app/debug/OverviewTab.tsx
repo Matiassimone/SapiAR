@@ -42,7 +42,6 @@ export function OverviewTab({ summary }: { summary: SessionSummary }) {
 
   return (
     <ScrollView>
-      <ValidationCard summary={summary} />
       <MapView style={styles.map} initialRegion={region}>
         <Polyline
           coordinates={positioned.map((row) => ({
@@ -82,6 +81,8 @@ export function OverviewTab({ summary }: { summary: SessionSummary }) {
           <VideoView style={styles.video} player={backPlayer} nativeControls />
         </View>
       </View>
+
+      <ValidationCard summary={summary} />
 
       <InfoSection title="Frames">
         <InfoRow label="Front" value={String(summary.frames.front)} />

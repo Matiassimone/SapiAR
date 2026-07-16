@@ -18,15 +18,12 @@ export interface LocationBuffer {
 }
 
 /**
- * Accumulates raw GPS samples and, per flush, runs the assembly pipeline in
- * the only correct order. Pre-session filter FIRST, then gap interpolation,
- * then row formatting. A cached pre-session fix that reached the
- * interpolator would become a false anchor and fabricate synthetic points
- * (checkpoint 4's 80.2s-span finding).
- *
- * The last real fix of each flush is carried into the next window so a gap
- * spanning two flushes is still detected and filled, keeping the file
- * append-only (no rewrites).
+ * Runs the assembly pipeline in the only correct order: filter pre-session
+ * samples, then interpolate, then format. A cached fix reaching the
+ * interpolator would become a false anchor and fabricate points that
+ * don't belong to this session. The last real fix of each flush carries
+ * into the next window so gaps spanning two flushes still get filled,
+ * without writing that carried fix to the file twice.
  */
 export function createLocationBuffer(
   fileUri: string,
@@ -51,6 +48,11 @@ export function createLocationBuffer(
 
       const withCarry = carriedFix == null ? window : [carriedFix, ...window]
       const entries = interpolateGpsGaps(withCarry, gapThresholdMs)
+
+      // Real entries pass through interpolateGpsGaps by the same reference,
+      // never cloned, so this check drops the carried fix without writing
+      // it twice. If interpolation ever starts cloning entries, this filter
+      // silently breaks and the carried fix gets duplicated in the file.
       const newEntries =
         carriedFix == null ? entries : entries.filter((e) => e !== carriedFix)
 
