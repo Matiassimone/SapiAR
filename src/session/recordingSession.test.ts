@@ -61,7 +61,14 @@ function fakeController(queues: number[][]): FakeController {
   return { drain: jest.fn(() => pending.shift() ?? []) }
 }
 
-function fakeVideoOutput() {
+function fakeVideoOutput(
+  // null = "never reported a resolution" (an explicit undefined argument
+  // would just re-trigger the default value)
+  currentResolution: { width: number; height: number } | null = {
+    width: 1920,
+    height: 1440,
+  },
+) {
   const stopRecording = jest.fn(async () => {
     finishRecording()
   })
@@ -74,6 +81,7 @@ function fakeVideoOutput() {
     stopRecording,
   }
   return {
+    currentResolution: currentResolution ?? undefined,
     createRecorder: jest.fn(async (settings: { filePath: string }) => {
       return { ...recorder, settings }
     }),
@@ -210,7 +218,7 @@ describe('startRecordingSession', () => {
     expect(locations).toContain('101100,1,2,')
   })
 
-  it('writes metadata.json with counts, duration, and fps on stop', async () => {
+  it('writes metadata.json with counts, duration, fps, and resolution on stop', async () => {
     const front = fakeController([[], [100010, 100020]])
     const back = fakeController([[], [100030]])
     mockGpsQueue.push([], [gpsFix(100100)])
@@ -227,6 +235,25 @@ describe('startRecordingSession', () => {
       frames: { front: 2, back: 1 },
       gps: { real: 1, interpolated: 0, error: 0 },
       fps: { front: 30, back: 30 },
+      resolution: {
+        front: { width: 1920, height: 1440 },
+        back: { width: 1920, height: 1440 },
+      },
     })
+  })
+
+  it('omits resolution from metadata when an output never reported one', async () => {
+    const session = await startWith(
+      fakeController([[]]),
+      fakeController([[]]),
+      fakeVideoOutput(null),
+    )
+    await session.stop()
+
+    const metadata = JSON.parse(contentOf('metadata.json')) as Record<
+      string,
+      unknown
+    >
+    expect(metadata.resolution).toBeUndefined()
   })
 })

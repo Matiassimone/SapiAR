@@ -7,6 +7,10 @@ describe('buildMetadataJson', () => {
     frames: { front: 1950, back: 780 },
     gps: { real: 31, interpolated: 4, error: 1 },
     fps: { front: 60, back: 24 },
+    resolution: {
+      front: { width: 1920, height: 1440 },
+      back: { width: 1920, height: 1440 },
+    },
   }
 
   it('serializes the session summary as parseable JSON', () => {
@@ -23,6 +27,20 @@ describe('buildMetadataJson', () => {
       durationMs: input.durationMs,
       frames: input.frames,
       gps: input.gps,
+      resolution: input.resolution,
+    })
+  })
+
+  it('omits resolution when the session never learned it', () => {
+    const parsed: unknown = JSON.parse(
+      buildMetadataJson({ ...input, resolution: null }),
+    )
+    expect(parsed).toEqual({
+      epochMs: input.epochMs,
+      durationMs: input.durationMs,
+      frames: input.frames,
+      gps: input.gps,
+      fps: input.fps,
     })
   })
 })

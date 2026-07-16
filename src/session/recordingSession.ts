@@ -126,6 +126,12 @@ export async function startRecordingSession(
       ExpoGps.stop()
       drainIntoBuffers()
 
+      // Read at stop, not at mount: currentResolution populates
+      // asynchronously after the outputs connect (an immediate read races
+      // it — checkpoint 8's delayed log). By session end it has been
+      // stable for the whole recording.
+      const frontResolution = deps.frontVideo.currentResolution
+      const backResolution = deps.backVideo.currentResolution
       const metadata: SessionMetadata = {
         epochMs,
         // Bookkeeping duration, same legal status as epochMs (checkpoint 5) —
@@ -134,6 +140,19 @@ export async function startRecordingSession(
         frames: frameBuffer.counts(),
         gps: locationBuffer.counts(),
         fps: deps.fps,
+        resolution:
+          frontResolution != null && backResolution != null
+            ? {
+                front: {
+                  width: frontResolution.width,
+                  height: frontResolution.height,
+                },
+                back: {
+                  width: backResolution.width,
+                  height: backResolution.height,
+                },
+              }
+            : null,
       }
       const metadataFile = new File(paths.metadataUri)
       metadataFile.create()
