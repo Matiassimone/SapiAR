@@ -75,20 +75,21 @@ export function interpolateGpsGaps(
 
   for (const sample of samples) {
     const fix = asRealFix(sample)
+
     if (fix != null && previousFix != null) {
       result.push(...syntheticPointsBetween(previousFix, fix, gapThresholdMs))
     }
+
     result.push(sample)
     if (fix != null) previousFix = fix
   }
   return result
 }
 
-// ponytail: linear position only. Speed, course and accuracies are -1 on
+// linear position only. Speed, course and accuracies are -1 on
 // synthetic rows, not interpolated. They weren't measured, the bounding
 // fixes frequently carry -1 themselves (stationary case, checkpoint 4),
-// and INTERP + -1 keeps synthetic rows unmistakable downstream. Revisit if
-// Sapios wants dead-reckoned kinematics.
+// and INTERP + -1 keeps synthetic rows unmistakable downstream.
 function syntheticPointsBetween(
   from: RealFix,
   to: RealFix,
@@ -99,8 +100,10 @@ function syntheticPointsBetween(
 
   const segments = Math.ceil(gapMs / gapThresholdMs)
   const points: InterpolatedPoint[] = []
+
   for (let i = 1; i < segments; i++) {
     const fraction = i / segments
+
     points.push({
       timestampMs: from.timestampMs + gapMs * fraction,
       lat: from.lat + (to.lat - from.lat) * fraction,

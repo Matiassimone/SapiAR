@@ -69,6 +69,7 @@ export function useCameraPipeline({
     ): Promise<boolean> =>
       new Promise((resolve) => {
         let ticks = 0
+
         const poll = setInterval(() => {
           if (frontFrames.count > 0 && backFrames.count > 0) {
             clearInterval(poll)
@@ -94,6 +95,7 @@ export function useCameraPipeline({
         front: VisionCamera.createPreviewOutput(),
         back: VisionCamera.createPreviewOutput(),
       }
+
       const frontFrames = createFrameTimestampController()
       const backFrames = createFrameTimestampController()
 
@@ -106,6 +108,7 @@ export function useCameraPipeline({
         VisionCamera.createVideoOutput({
           targetResolution: candidate.targetResolution,
         })
+
       const frontVideo = createVideo()
       const backVideo = createVideo()
 
@@ -151,14 +154,17 @@ export function useCameraPipeline({
       ]
 
       let attemptSession: CameraSession | undefined
+
       try {
         attemptSession = await VisionCamera.createCameraSession(true)
+
         // AVFoundation interruption/error listeners. Until first frame they
         // fail the attempt silently (ladder mode). After it they feed the
         // banner with the cause, e.g.
         // 'video-device-not-available-due-to-system-pressure'.
         let broughtUp = false
         let failBringUp: (() => void) | undefined
+
         healthSubs.push(
           attemptSession.addOnErrorListener((error) => {
             if (broughtUp) {
@@ -191,7 +197,9 @@ export function useCameraPipeline({
             console.log('[camera-health] session stopped')
           }),
         )
+
         await attemptSession.configure(connections)
+
         // Never call setOutputSettings under AVCaptureMultiCamSession. It
         // throws an uncatchable ObjC exception in every config tested (5
         // device experiments, h265 listed as supported or not), a
@@ -199,14 +207,15 @@ export function useCameraPipeline({
         // this hardware. The log below is the per-run evidence.
         console.log(
           `[camera-config] rung ${candidate.step} codecs front ${frontVideo.getSupportedVideoCodecs().join('/')}, ` +
-            `back ${backVideo.getSupportedVideoCodecs().join('/')} ` +
-            '(relying on library default, setOutputSettings crashes under multi-cam)',
+            `back ${backVideo.getSupportedVideoCodecs().join('/')} `,
         )
         if (cancelled) {
           void attemptSession.stop()
           return null
         }
+
         await attemptSession.start()
+
         const framesFlowing = await waitForFirstFrames(
           frontFrames,
           backFrames,
@@ -218,6 +227,7 @@ export function useCameraPipeline({
           void attemptSession.stop()
           return null
         }
+
         broughtUp = true
         // currentResolution populates async after connections form. Reading
         // right after start() races it, hence the delay.
@@ -227,6 +237,7 @@ export function useCameraPipeline({
           )
         }, 3000)
         session = attemptSession
+
         return {
           previews,
           recordingDeps: {
@@ -259,10 +270,12 @@ export function useCameraPipeline({
       const cameraGranted =
         VisionCamera.cameraPermissionStatus === 'authorized' ||
         (await VisionCamera.requestCameraPermission())
+
       if (!cameraGranted) {
         setStatus('Camera permission denied. Enable it in Settings.')
         return
       }
+
       void ExpoGps.requestPermission()
 
       if (!VisionCamera.supportsMultiCamSessions) {
@@ -290,6 +303,7 @@ export function useCameraPipeline({
       const backDevice = combination?.find(
         (device) => device.position === 'back',
       )
+
       if (frontDevice == null || backDevice == null) {
         setStatus(
           'No supported front + back camera combination on this device.',
@@ -311,12 +325,14 @@ export function useCameraPipeline({
           front: frontDevice,
           back: backDevice,
         })
+
         if (rigForCandidate != null) {
           if (candidate.degraded) {
             console.log(
               `[camera-config] ideal config failed at bring-up, running degraded rung ${candidate.step} (binned ${String(candidate.binned)})`,
             )
           }
+
           setRig(rigForCandidate)
           setStatus('')
           return
@@ -334,6 +350,7 @@ export function useCameraPipeline({
     setup().catch((error: unknown) => {
       setStatus(error instanceof Error ? error.message : String(error))
     })
+
     return () => {
       cancelled = true
       for (const sub of healthSubs) sub.remove()
